@@ -1,5 +1,7 @@
 import re
 
+_RX_WS = re.compile(r'[ \t\r\n]*')
+
 
 class Parser:
     def __init__(self, text):
@@ -11,8 +13,8 @@ class Parser:
         return self.i >= self.n
 
     def skip_ws(self):
-        while self.i < self.n and self.text[self.i] in ' \t\r\n':
-            self.i += 1
+        m = _RX_WS.match(self.text, self.i)
+        self.i = m.end()
 
     def _skip_quoted(self, i):
         q = self.text[i]
@@ -331,6 +333,18 @@ class Parser:
                 self.i = self.n
             self.skip_ws()
         vmm = re.match(r'%%?([A-Za-z])', self.text[self.i:])
+        base_dir = ''
+        if not vmm and 'r' in flags:
+            # for /r [path] %%v - capture the optional root directory
+            pm = re.match(r'("[^"]*"|\S+)', self.text[self.i:])
+            if pm and not pm.group(1).lower().startswith(('%', 'in')):
+                j = self.i + pm.end()
+                rest = self.text[j:j + 8].lstrip()
+                if re.match(r'%%?[A-Za-z]', rest):
+                    base_dir = pm.group(1)
+                    self.i = j
+                    self.skip_ws()
+                    vmm = re.match(r'%%?([A-Za-z])', self.text[self.i:])
         if not vmm:
             text = self._read_simple_line_from(self.i - 3)
             return ('simple', text)
@@ -355,4 +369,5 @@ class Parser:
             text = self._read_simple_line_from(self.i)
             node = self.parse_one(text.strip())
             body = [node] if node else []
-        return ('for', dict(flags=flags, var=var, inner=list_inner, body=body, opts=opts))
+        return ('for', dict(flags=flags, var=var, inner=list_inner, body=body,
+                            opts=opts, base_dir=base_dir))

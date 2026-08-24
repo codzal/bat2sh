@@ -2,7 +2,7 @@
 
 __version__ = '0.1'
 
-from .cli import _collect_jobs, _check, decode_text, main
+from .cli import decode_text, main
 from .commands import WIN_COMMAND_MAP
 from .parser import Parser
 from .shell import (dos_slashes, expand_vars, split_redir, split_top_ops,

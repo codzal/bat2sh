@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Generated shell scripts (produced by bat2sh itself)
+*.sh
+
+# OS / editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

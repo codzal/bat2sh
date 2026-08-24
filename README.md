@@ -11,6 +11,29 @@ batch (Windows)  ──►  bash (Linux / macOS / WSL)
 
 ---
 
+## Quick start
+
+```bash
+git clone https://github.com/codzal/bat2sh.git
+cd bat2sh
+
+# convert one file, print the bash script to stdout
+python3 -m bat2sh examples/basics/01_hello_world.bat
+
+# convert in place: myscript.bat -> myscript.sh
+python3 -m bat2sh -i myscript.bat
+
+# convert a whole folder (recursively) and syntax-check every result
+python3 -m bat2sh -c path/to/batch/files/
+
+# optional graphical interface
+python3 frontend.py
+```
+
+Generated scripts need nothing but `bash`: run them with `bash name.sh`.
+
+---
+
 ## Features
 
 * **Layout** — `bat2sh/` package (`shell` expansions, `parser`, `translator`,
@@ -23,7 +46,7 @@ batch (Windows)  ──►  bash (Linux / macOS / WSL)
   `errorlevel` variable.
 * **Control flow** — `if`, `if not`, `if /i`, `if exist`, `if defined`,
   `if errorlevel`, string and numeric comparisons (`equ`/`neq`/`gtr`/`geq`/
-  `lss`/`leq`), `else` branches, `for`, `for /l`, `for /f` (with `tokens=`,
+  `lss`/`leq`), `else` branches, `for`, `for /l`, `for /r`, `for /f` (with `tokens=`,
   `delims=`, `skip=`, and quoted-string/literal sources), **nested** `for` and
   `if` blocks, `goto` (including jumping out of loops) and `call` subroutines
   with their own argument stack.
@@ -48,7 +71,7 @@ batch (Windows)  ──►  bash (Linux / macOS / WSL)
 
 * Python 3.6+
 * `bash` (for the generated scripts and the `-c` syntax check)
-* `tkinter` (only for the optional GUI)
+* `tkinter` (only for the frontend GUI)
 
 ---
 
@@ -157,12 +180,14 @@ This faithfully models `goto`, including jumps that leave `for`/`if` blocks
 * `errorlevel` reflects the status of the **last executed command**, exactly
   as in batch; if a command such as `echo` runs between the command and an
   `if errorlevel` test, the value is reset (this matches real `cmd.exe`).
-* Some constructs have no exact POSIX equivalent and are approximated
-  (`start` is mapped to a background `nohup … &`; `color`/`mode` are no-ops).
-* The body of `for /f "…"` and `cmd /c "…"` is executed as a shell command
-  rather than recursively re-parsed as batch.
-* `for /r` (recursive directory walk) and a few very rare commands are not
-  yet modelled.
+* `start` strips its switches/title and runs the program in the background
+  (`nohup … &`) - there is no console/session concept in POSIX.
+* `color`, `mode`, `chcp` and a few other console-only commands are no-ops.
+* The command source of `for /f '…'` is executed as a shell command with
+  variables pre-expanded; batch-only syntax inside it is not re-parsed.
+  `cmd /c other.bat` invokes the converted `other.sh` sibling.
+* Computed variable names (`!prefix_%%i!`) and dynamic call labels
+  (`call :!name!`) have no direct bash equivalent and stay untranslatable.
 
 Patches and example batch files that expose missing behaviour are welcome.
 

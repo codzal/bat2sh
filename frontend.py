@@ -60,10 +60,53 @@ VERSION = bat2sh.__version__
 ENCODINGS = ['auto', 'utf-8', 'utf-8-sig', 'cp1251', 'cp1252',
              'cp866', 'latin-1', 'utf-16']
 
+STRINGS = {
+    'en': {
+        'file': 'File', 'open_file': 'Open File…',
+        'open_dir': 'Open Folder…', 'save_as': 'Save Script As…',
+        'quit': 'Quit', 'edit': 'Edit', 'copy': 'Copy Script',
+        'run': 'Run', 'convert': 'Convert', 'help': 'Help',
+        'about': 'About',
+        'lang_menu': 'Language', 'lang_other': 'Русский',
+        'input': 'Input .bat / .cmd file or folder:',
+        'browse_file': 'Browse File…', 'browse_dir': 'Browse Folder…',
+        'options': 'Options', 'output': 'Output:',
+        'out_inplace': 'Next to input (name.sh)',
+        'out_file': 'Choose file:', 'out_outdir': 'Output directory:',
+        'out_stdout': 'Preview only (do not write)',
+        'encoding': 'Encoding:', 'chk': 'Syntax-check only (-c)',
+        'clean': 'Clean output (-n)',
+        'noclobber': "Don't overwrite existing (-C)",
+        'quiet': 'Quiet (-q)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
+        'ready': 'Ready.', 'preview': 'Generated shell script',
+    },
+    'ru': {
+        'file': 'Файл', 'open_file': 'Открыть файл…',
+        'open_dir': 'Открыть папку…', 'save_as': 'Сохранить скрипт как…',
+        'quit': 'Выход', 'edit': 'Правка', 'copy': 'Копировать скрипт',
+        'run': 'Запуск', 'convert': 'Конвертировать', 'help': 'Справка',
+        'about': 'О программе',
+        'lang_menu': 'Язык / Language', 'lang_other': 'English',
+        'input': 'Входной .bat/.cmd файл или папка:',
+        'browse_file': 'Выбрать файл…', 'browse_dir': 'Выбрать папку…',
+        'options': 'Параметры', 'output': 'Вывод:',
+        'out_inplace': 'Рядом с входным (имя.sh)',
+        'out_file': 'Указать файл:', 'out_outdir': 'Папка вывода:',
+        'out_stdout': 'Только просмотр (не сохранять)',
+        'encoding': 'Кодировка:', 'chk': 'Только проверка синтаксиса (-c)',
+        'clean': 'Чистый вывод (-n)',
+        'noclobber': 'Не перезаписывать существующие (-C)',
+        'quiet': 'Тихий режим (-q)', 'copy_btn': 'Копировать',
+        'save_btn': 'Сохранить как…', 'ready': 'Готово.',
+        'preview': 'Готовый shell-скрипт',
+    },
+}
+
 
 class Bat2ShGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.lang = 'en'
         self.title('bat2sh %s' % VERSION)
         self.geometry('900x680')
         self.minsize(680, 500)
@@ -82,8 +125,70 @@ class Bat2ShGUI(tk.Tk):
         self._layout()
         self._bind_shortcuts()
         self._sync_output_state()
+        self._apply_lang()
+
+    def _t(self, key):
+        return STRINGS[self.lang][key]
+
+    def _apply_lang(self):
+        t = self._t
+        self.input_lbl.configure(text=t('input'))
+        self.browse_file_btn.configure(text=t('browse_file'))
+        self.browse_dir_btn.configure(text=t('browse_dir'))
+        self.opt_frame.configure(text=t('options'))
+        self.out_lbl.configure(text=t('output'))
+        self.radio_inplace.configure(text=t('out_inplace'))
+        self.radio_file.configure(text=t('out_file'))
+        self.radio_outdir.configure(text=t('out_outdir'))
+        self.radio_stdout.configure(text=t('out_stdout'))
+        self.enc_lbl.configure(text=t('encoding'))
+        self.check_btn.configure(text=t('chk'))
+        self.clean_btn.configure(text=t('clean'))
+        self.noclobber_btn.configure(text=t('noclobber'))
+        self.quiet_btn.configure(text=t('quiet'))
+        self.convert_btn.configure(text=t('convert'))
+        self.copy_btn.configure(text=t('copy_btn'))
+        self.save_btn.configure(text=t('save_btn'))
+        self.preview_frame.configure(text=t('preview'))
+        self.status_lbl.configure(text=t('ready'))
+        self.config(menu=self._build_menubar())
+
+    def _set_lang(self, lang):
+        self.lang = 'ru' if lang == 'en' else 'en'
+        self._apply_lang()
 
     # ui construction
+    def _build_menubar(self):
+        t = self._t
+        menubar = tk.Menu(self)
+        filemenu = tk.Menu(menubar, tearoff=0)
+        filemenu.add_command(label=t('open_file'), accelerator='Ctrl+O',
+                             command=self._browse_file)
+        filemenu.add_command(label=t('open_dir'), command=self._browse_dir)
+        filemenu.add_separator()
+        filemenu.add_command(label=t('save_as'), accelerator='Ctrl+S',
+                             command=self._save_as)
+        filemenu.add_separator()
+        filemenu.add_command(label=t('quit'), accelerator='Ctrl+Q',
+                             command=self.destroy)
+        menubar.add_cascade(label=t('file'), menu=filemenu)
+        editmenu = tk.Menu(menubar, tearoff=0)
+        editmenu.add_command(label=t('copy'), accelerator='Ctrl+C',
+                             command=self._copy)
+        menubar.add_cascade(label=t('edit'), menu=editmenu)
+        runmenu = tk.Menu(menubar, tearoff=0)
+        runmenu.add_command(label=t('convert'), accelerator='F5',
+                            command=self._convert)
+        menubar.add_cascade(label=t('run'), menu=runmenu)
+        langmenu = tk.Menu(menubar, tearoff=0)
+        langmenu.add_command(label=t('lang_other'),
+                             command=lambda: self._set_lang(self.lang))
+        menubar.add_cascade(label=t('lang_menu'), menu=langmenu)
+        helpmenu = tk.Menu(menubar, tearoff=0)
+        helpmenu.add_command(label=t('about'), command=self._about)
+        menubar.add_cascade(label=t('help'), menu=helpmenu)
+        return menubar
+
     def _build_widgets(self):
         self.style = ttk.Style(self)
         try:
@@ -91,54 +196,29 @@ class Bat2ShGUI(tk.Tk):
         except tk.TclError:
             pass
 
-        menubar = tk.Menu(self)
-        filemenu = tk.Menu(menubar, tearoff=0)
-        filemenu.add_command(label='Open File…', accelerator='Ctrl+O',
-                             command=self._browse_file)
-        filemenu.add_command(label='Open Folder…', command=self._browse_dir)
-        filemenu.add_separator()
-        filemenu.add_command(label='Save Script As…', accelerator='Ctrl+S',
-                             command=self._save_as)
-        filemenu.add_separator()
-        filemenu.add_command(label='Quit', accelerator='Ctrl+Q',
-                             command=self.destroy)
-        menubar.add_cascade(label='File', menu=filemenu)
-        editmenu = tk.Menu(menubar, tearoff=0)
-        editmenu.add_command(label='Copy Script', accelerator='Ctrl+C',
-                             command=self._copy)
-        menubar.add_cascade(label='Edit', menu=editmenu)
-        runmenu = tk.Menu(menubar, tearoff=0)
-        runmenu.add_command(label='Convert', accelerator='F5',
-                            command=self._convert)
-        menubar.add_cascade(label='Run', menu=runmenu)
-        helpmenu = tk.Menu(menubar, tearoff=0)
-        helpmenu.add_command(label='About', command=self._about)
-        menubar.add_cascade(label='Help', menu=helpmenu)
-        self.config(menu=menubar)
-
-        self.input_lbl = ttk.Label(self, text='Input .bat / .cmd file or folder:')
+        self.input_lbl = ttk.Label(self, text=self._t('input'))
         self.input_entry = ttk.Entry(self, textvariable=self.inp_var)
-        self.browse_file_btn = ttk.Button(self, text='Browse File…',
+        self.browse_file_btn = ttk.Button(self, text=self._t('browse_file'),
                                           command=self._browse_file)
-        self.browse_dir_btn = ttk.Button(self, text='Browse Folder…',
+        self.browse_dir_btn = ttk.Button(self, text=self._t('browse_dir'),
                                          command=self._browse_dir)
 
-        self.opt_frame = ttk.LabelFrame(self, text='Options')
+        self.opt_frame = ttk.LabelFrame(self, text=self._t('options'))
 
-        self.out_lbl = ttk.Label(self.opt_frame, text='Output:')
+        self.out_lbl = ttk.Label(self.opt_frame, text=self._t('output'))
         self.radio_inplace = ttk.Radiobutton(
-            self.opt_frame, text='Next to input (name.sh)',
+            self.opt_frame, text=self._t('out_inplace'),
             variable=self.out_mode, value='inplace',
             command=self._sync_output_state)
         self.radio_file = ttk.Radiobutton(
-            self.opt_frame, text='Choose file:',
+            self.opt_frame, text=self._t('out_file'),
             variable=self.out_mode, value='file',
             command=self._sync_output_state)
         self.out_entry = ttk.Entry(self.opt_frame, textvariable=self.out_var)
         self.out_browse_btn = ttk.Button(self.opt_frame, text='Browse…',
                                          command=self._browse_out)
         self.radio_outdir = ttk.Radiobutton(
-            self.opt_frame, text='Output directory:',
+            self.opt_frame, text=self._t('out_outdir'),
             variable=self.out_mode, value='outdir',
             command=self._sync_output_state)
         self.outdir_entry = ttk.Entry(self.opt_frame,
@@ -146,40 +226,43 @@ class Bat2ShGUI(tk.Tk):
         self.outdir_browse_btn = ttk.Button(self.opt_frame, text='Browse…',
                                             command=self._browse_outdir)
         self.radio_stdout = ttk.Radiobutton(
-            self.opt_frame, text='Preview only (do not write)',
+            self.opt_frame, text=self._t('out_stdout'),
             variable=self.out_mode, value='stdout',
             command=self._sync_output_state)
 
-        self.enc_lbl = ttk.Label(self.opt_frame, text='Encoding:')
+        self.enc_lbl = ttk.Label(self.opt_frame, text=self._t('encoding'))
         self.enc_combo = ttk.Combobox(self.opt_frame,
                                       textvariable=self.encoding_var,
                                       values=ENCODINGS, width=12,
                                       state='readonly')
 
         self.check_btn = ttk.Checkbutton(
-            self.opt_frame, text='Syntax-check only (-c)',
+            self.opt_frame, text=self._t('chk'),
             variable=self.check_var)
         self.clean_btn = ttk.Checkbutton(
-            self.opt_frame, text='Clean output (-n)',
+            self.opt_frame, text=self._t('clean'),
             variable=self.clean_var)
         self.noclobber_btn = ttk.Checkbutton(
-            self.opt_frame, text="Don't overwrite existing (-C)",
+            self.opt_frame, text=self._t('noclobber'),
             variable=self.noclobber_var)
         self.quiet_btn = ttk.Checkbutton(
-            self.opt_frame, text='Quiet (-q)',
+            self.opt_frame, text=self._t('quiet'),
             variable=self.quiet_var)
 
-        self.convert_btn = ttk.Button(self, text='Convert',
+        self.convert_btn = ttk.Button(self, text=self._t('convert'),
                                       command=self._convert)
-        self.copy_btn = ttk.Button(self, text='Copy', command=self._copy)
-        self.save_btn = ttk.Button(self, text='Save As…',
+        self.copy_btn = ttk.Button(self, text=self._t('copy_btn'),
+                                   command=self._copy)
+        self.save_btn = ttk.Button(self, text=self._t('save_btn'),
                                    command=self._save_as)
         self.progress = ttk.Progressbar(self, orient='horizontal',
                                         mode='determinate', maximum=100)
 
-        self.status_lbl = ttk.Label(self, text='Ready.', anchor='w')
+        self.status_lbl = ttk.Label(self, text=self._t('ready'),
+                                    anchor='w')
 
-        self.preview_frame = ttk.LabelFrame(self, text='Generated shell script')
+        self.preview_frame = ttk.LabelFrame(
+            self, text=self._t('preview'))
         self.preview = scrolledtext.ScrolledText(
             self.preview_frame, wrap=tk.NONE, font=('Courier New', 10))
 
@@ -272,12 +355,19 @@ class Bat2ShGUI(tk.Tk):
             text=msg, foreground=('#c0392b' if error else '#2c3e50'))
 
     def _about(self):
-        messagebox.showinfo(
-            'About bat2sh',
-            'bat2sh %s\n\nConverts Windows batch (.bat/.cmd) scripts into '
-            'POSIX bash scripts.\n\n'
-            'Backend: bat2sh (program-counter dispatch translator).\n'
-            'GUI: Tkinter front-end.' % VERSION)
+        if self.lang == 'ru':
+            body = ('bat2sh %s\n\nПереводит сценарии Windows batch '
+                    '(.bat/.cmd) в сценарии POSIX bash.\n\n'
+                    'Бэкенд: bat2sh (диспетчер по счётчику команд).\n'
+                    'Фронтенд: Tkinter.') % VERSION
+            title = 'О программе bat2sh'
+        else:
+            body = ('bat2sh %s\n\nConverts Windows batch (.bat/.cmd) scripts'
+                    ' into POSIX bash scripts.\n\n'
+                    'Backend: bat2sh (program-counter dispatch translator).\n'
+                    'GUI: Tkinter front-end.') % VERSION
+            title = 'About bat2sh'
+        messagebox.showinfo(title, body)
 
     @staticmethod
     def _bash_check(sh):

@@ -6,13 +6,46 @@ from .commands import WIN_COMMAND_MAP
 from .parser import Parser
 from .shell import (_unquote, dos_slashes, expand_vars, fix_redir,
                     split_args, split_redir, split_top_ops, unescape_caret,
-                    unquote, winpath)
+                    winpath)
 
 class Translator:
     def __init__(self):
         self.label_map = {}
         self.func_names = {}
         self._need_ci = False
+
+        def _sub_nul(a):
+            return 'cat ' + re.sub(r'\bnul\b', '/dev/null', expand_vars(a))
+
+        self._cmd = {
+            'set': self.cmd_set, 'echo': self.cmd_echo,
+            'cd': self.cmd_cd, 'chdir': self.cmd_cd, 'exit': self.cmd_exit,
+            'rd': self.cmd_rd, 'rmdir': self.cmd_rd, 'del': self.cmd_del,
+            'erase': self.cmd_del, 'copy': self.cmd_copy,
+            'move': self.cmd_move, 'ren': self.cmd_ren,
+            'rename': self.cmd_ren, 'pause': self.cmd_pause,
+            'dir': self.cmd_dir, 'start': self.cmd_start,
+            'path': self.cmd_path, 'call': self.cmd_call_ext,
+            'md': lambda a: 'mkdir -p ' + expand_vars(a),
+            'mkdir': lambda a: 'mkdir -p ' + expand_vars(a),
+            'type': _sub_nul,
+            'cls': lambda a: 'clear',
+            'title': lambda a: "printf '\\033]0;%s\\007' " + '"'
+                               + expand_vars(a) + '"',
+            'color': lambda a: ':',
+            'ver': lambda a: 'uname -a',
+            'date': lambda a: 'date ' + expand_vars(a),
+            'time': lambda a: 'date +%T ' + expand_vars(a),
+            'setlocal': lambda a: ':  # setlocal',
+            'endlocal': lambda a: ':  # endlocal',
+            'pushd': lambda a: 'pushd ' + expand_vars(a),
+            'popd': lambda a: 'popd',
+            'shift': lambda a: 'ARGS=("${ARGS[@]:1}")',
+            'find': lambda a: 'grep ' + expand_vars(a),
+            'findstr': lambda a: 'grep -E ' + expand_vars(a),
+            'choice': lambda a: 'choice ' + expand_vars(a),
+            'cmd': self.cmd_cmd,
+        }
 
     # command level
     def translate_segment(self, seg, nxt=0):
@@ -42,78 +75,32 @@ class Translator:
             if t is None:
                 return '# ERROR: undefined label %s' % tgt
             return 'PC=%d; return' % t
-        if lcmd == 'set':
-            return self.cmd_set(args)
-        if lcmd == 'echo':
-            return self.cmd_echo(args)
-        if lcmd == 'cd' or lcmd == 'chdir':
-            return self.cmd_cd(args)
-        if lcmd == 'exit':
-            return self.cmd_exit(args)
-        if lcmd == 'md' or lcmd == 'mkdir':
-            return 'mkdir -p ' + expand_vars(args)
-        if lcmd == 'rd' or lcmd == 'rmdir':
-            return self.cmd_rd(args)
-        if lcmd == 'del' or lcmd == 'erase':
-            return self.cmd_del(args)
-        if lcmd == 'copy':
-            return self.cmd_copy(args)
-        if lcmd == 'move':
-            return self.cmd_move(args)
-        if lcmd == 'ren' or lcmd == 'rename':
-            return self.cmd_ren(args)
-        if lcmd == 'type':
-            return 'cat ' + re.sub(r'\bnul\b', '/dev/null', expand_vars(args))
-        if lcmd == 'cls':
-            return 'clear'
-        if lcmd == 'pause':
-            return self.cmd_pause(args)
-        if lcmd == 'title':
-            return "printf '\\033]0;%s\\007' " + '"' + expand_vars(args) + '"'
-        if lcmd == 'color':
-            return ':'
-        if lcmd == 'ver':
-            return 'uname -a'
-        if lcmd == 'date':
-            return 'date ' + expand_vars(args)
-        if lcmd == 'time':
-            return 'date +%T ' + expand_vars(args)
-        if lcmd == 'setlocal':
-            return ':  # setlocal'
-        if lcmd == 'endlocal':
-            return ':  # endlocal'
-        if lcmd == 'pushd':
-            return 'pushd ' + expand_vars(args)
-        if lcmd == 'popd':
-            return 'popd'
-        if lcmd == 'shift':
-            return 'ARGS=("${ARGS[@]:1}")'
-        if lcmd == 'start':
-            return self.cmd_start(args)
-        if lcmd == 'dir':
-            return self.cmd_dir(args)
-        if lcmd == 'find':
-            return 'grep ' + expand_vars(args)
-        if lcmd == 'findstr':
-            return 'grep -E ' + expand_vars(args)
-        if lcmd == 'path':
-            return self.cmd_path(args)
-        if lcmd == 'call':
-            return self.cmd_call_ext(args)
-        if lcmd == 'choice':
-            return 'choice ' + expand_vars(args)
-        if lcmd == 'cmd':
-            m = re.match(r'/[ck]\s+"?(.*?)"?\s*$', args, re.IGNORECASE)
-            if m:
-                cmdline = m.group(1).replace('exit /b', 'exit').replace('exit /B', 'exit')
-                return 'bash -c "%s"' % expand_vars(cmdline)
-            return 'bash -c "%s"' % expand_vars(args)
 
+        h = self._cmd.get(lcmd)
+        if h is not None:
+            return h(args)
         handler = WIN_COMMAND_MAP.get(lcmd)
         if handler is not None:
             return handler(args)
 
         return expand_vars(seg)
+
+    def cmd_cmd(self, args):
+        m = re.match(r'/[ck]\s+"?(.*?)"?\s*$', args, re.IGNORECASE)
+        if not m:
+            return 'bash -c "%s"' % expand_vars(args)
+        cmdline = m.group(1).replace('exit /b', 'exit').replace('exit /B', 'exit')
+        mb = re.match(r'"?([^"]+\.(?:bat|cmd))"?\s*(.*)$',
+                      cmdline.strip(), re.IGNORECASE)
+        if mb:
+            # cmd /c other.bat -> run the converted sibling script
+            sh = re.sub(r'\.(bat|cmd)$', '.sh', mb.group(1),
+                        flags=re.IGNORECASE)
+            if '/' not in sh and not sh.startswith('.'):
+                sh = './' + sh
+            rest = expand_vars(mb.group(2))
+            return '"%s"%s' % (sh, (' ' + rest) if rest else '')
+        return 'bash -c "%s"' % expand_vars(cmdline)
 
     def cmd_set(self, args):
         args = args.strip()
@@ -258,6 +245,13 @@ class Translator:
         a = expand_vars(args).strip()
         if a == '':
             return ':'
+        a = re.sub(r'/[a-z]+\b\s*', '', a, flags=re.IGNORECASE)
+        m = re.match(r'"([^"]*)"\s*(.*)$', a)
+        if m:
+            rest = m.group(2).strip()
+            if not rest:
+                return ':  # start: empty title only'
+            return 'nohup %s >/dev/null 2>&1 &' % rest
         return 'nohup %s >/dev/null 2>&1 &' % a
 
     def cmd_dir(self, args):
@@ -467,6 +461,26 @@ class Translator:
                 lines.append('for ((%s=%s; %s; %s+=%s)); do' % (var, start, cond, var, step))
             else:
                 lines.append('for %s in %s; do' % (var, expand_vars(d['inner'])))
+        elif 'r' in flags:
+            # for /r [root] %%v in (patterns) - recursive file walk via find
+            root = winpath(expand_vars(d.get('base_dir', '') or '.')).strip('"')
+            pats = [p.strip().strip('"') for p in
+                    expand_vars(d['inner']).strip('()').split()]
+            name_tests = ' -o '.join('-name %s' % shlex.quote(p)
+                                     for p in pats if p)
+            if not name_tests:
+                name_tests = '-type f'
+            else:
+                name_tests = '\\( %s \\) -type f' % name_tests
+            lines.append("while IFS= read -r -d '' _fr; do")
+            lines.append('    %s="$_fr"' % var)
+            body = self._body_lines(d['body'], idx, nxt)
+            for l in body:
+                lines.append(re.sub(r'%%([A-Za-z])\b', r'$\1', l))
+            lines.append('done < <(LC_ALL=C find "%s" %s -print0 | sort -z)'
+                         % (root, name_tests))
+            lines.append('ERRORLEVEL=$?')
+            return lines
         elif 'f' in flags:
             inner2 = d['inner'].strip()
             opts = d.get('opts', '') or ''

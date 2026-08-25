@@ -13,6 +13,7 @@ def _unquote(s):
     return s
 
 
+@lru_cache(maxsize=8192)
 def winpath(s):
     if not s:
         return s

@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from functools import lru_cache
 
 from . import __version__
@@ -61,18 +62,36 @@ def _collect_jobs(args):
 _CHECK_PATH = os.path.join(tempfile.gettempdir(), 'bat2sh_check_%d.sh' % os.getpid())
 atexit.register(lambda: os.path.exists(_CHECK_PATH) and os.unlink(_CHECK_PATH))
 
+_LOCK = threading.Lock()
 
-def _check(result, name):
-    with open(_CHECK_PATH, 'w') as f:
-        f.write(result)
-    r = subprocess.run(['bash', '-n', _CHECK_PATH],
+
+def _write_tmp(text):
+    with _LOCK, open(_CHECK_PATH, 'w') as f:
+        f.write(text)
+    return _CHECK_PATH
+
+
+_RUN_PATH = os.path.join(tempfile.gettempdir(), 'bat2sh_run_%d.sh' % os.getpid())
+atexit.register(lambda: os.path.exists(_RUN_PATH) and os.unlink(_RUN_PATH))
+
+
+def _run_script(text):
+    """Execute converted text with bash; stdio is inherited so the script
+    can interact with the terminal (pause, set /p, ...)."""
+    with open(_RUN_PATH, 'w') as f:
+        f.write(text)
+    try:
+        return subprocess.call(['bash', _RUN_PATH])
+    except OSError as e:
+        sys.stderr.write('cannot run: %s\n' % e)
+        return 127
+
+
+def syntax_check(text):
+    """`bash -n` the converted text; return (ok, error_output)."""
+    r = subprocess.run(['bash', '-n', _write_tmp(text)],
                        capture_output=True, text=True)
-    if r.returncode == 0:
-        print('OK    %s' % name)
-        return 0
-    print('FAIL  %s' % name)
-    sys.stderr.write(r.stderr)
-    return 1
+    return r.returncode == 0, r.stderr
 
 
 @lru_cache(maxsize=1)
@@ -82,7 +101,10 @@ def _argparser():
     ap = argparse.ArgumentParser(
         prog='bat2sh',
         description='Convert Windows batch files to bash scripts.')
-    ap.add_argument('input', help='Input .bat/.cmd file, directory, or - for stdin')
+    ap.add_argument('input', nargs='?', default=None,
+                    help='Input .bat/.cmd file, directory, or - for stdin; '
+                         'with no argument a piped batch script is converted '
+                         'and executed immediately')
     ap.add_argument('output', nargs='?', help='Output .sh file (default: stdout)')
     ap.add_argument('-i', '--inplace', action='store_true',
                     help='Write <input>.sh next to the input file')
@@ -106,48 +128,88 @@ def _argparser():
     return ap
 
 
+def _process_job(args, src, out):
+    """Convert one job; return (rc, stdout_text_or_None, stderr_lines)."""
+    if src == '-':
+        text = sys.stdin.read()
+        name = '<stdin>'
+    else:
+        with open(src, 'rb') as f:
+            text = decode_text(f.read(), encoding=args.encoding)
+        name = src
+    try:
+        result = Translator().convert(text, clean=args.no_debug)
+    except Exception as e:  # noqa: BLE001
+        return 1, None, ['FAIL  %s' % name,
+                         'conversion error: %s' % e]
+
+    if args.check:
+        ok, errout = syntax_check(result)
+        if ok:
+            return 0, None, []
+        return 1, None, ['FAIL  %s' % name, errout.rstrip('\n')]
+    if out is None:
+        return 0, result, []
+
+    err = []
+    if args.no_clobber and os.path.exists(out):
+        if not args.quiet:
+            err.append('Skip  %s (exists)' % out)
+        return 0, None, err
+    os.makedirs(os.path.dirname(os.path.abspath(out)) or '.', exist_ok=True)
+    with open(out, 'w', encoding='utf-8') as f:
+        f.write(result)
+    try:
+        os.chmod(out, 0o755)
+    except OSError:
+        pass
+    if not args.quiet:
+        err.append('Wrote %s' % out)
+    return 0, None, err
+
+
 def main(argv=None):
     args = _argparser().parse_args(argv)
+
+    if args.input is None:
+        # no argument: piped batch is converted and executed immediately
+        if sys.stdin.isatty():
+            sys.stderr.write('no input given; pass a file/folder, or pipe '
+                             'a batch script: cat x.bat | python3 -m bat2sh\n')
+            return 1
+        text = sys.stdin.read()
+        try:
+            result = Translator().convert(text, clean=args.no_debug)
+        except Exception as e:  # noqa: BLE001
+            print('FAIL  <stdin>')
+            sys.stderr.write('conversion error: %s\n' % e)
+            return 1
+        return _run_script(result)
 
     jobs = _collect_jobs(args)
     if not jobs:
         print('No .bat/.cmd files found.', file=sys.stderr)
         return 1
 
-    rc = 0
-    for src, out in jobs:
-        if src == '-':
-            text = sys.stdin.read()
-            name = '<stdin>'
-        else:
-            with open(src, 'rb') as f:
-                text = decode_text(f.read(), encoding=args.encoding)
-            name = src
-        try:
-            result = Translator().convert(text, clean=args.no_debug)
-        except Exception as e:  # noqa: BLE001
-            print('FAIL  %s' % name)
-            sys.stderr.write('conversion error: %s\n' % e)
-            rc = 1
-            continue
+    # streaming modes stay sequential; batch file jobs run in parallel
+    parallel = len(jobs) > 1 and (args.check or all(out for _s, out in jobs))
 
-        if args.check:
-            rc |= _check(result, name)
-        elif out:
-            if args.no_clobber and os.path.exists(out):
-                if not args.quiet:
-                    print('Skip  %s (exists)' % out, file=sys.stderr)
-                continue
-            os.makedirs(os.path.dirname(os.path.abspath(out)) or '.', exist_ok=True)
-            with open(out, 'w', encoding='utf-8') as f:
-                f.write(result)
-            try:
-                os.chmod(out, 0o755)
-            except OSError:
-                pass
-            if not args.quiet:
-                print('Wrote %s' % out, file=sys.stderr)
-        else:
-            sys.stdout.write(result)
-    return rc
+    def run_all(worker):
+        rc = 0
+        for r in worker():
+            jrc, out_text, err_lines = r
+            rc |= jrc
+            if out_text is not None:
+                sys.stdout.write(out_text)
+            for ln in err_lines:
+                print(ln, file=sys.stderr)
+        return rc
+
+    if parallel:
+        from concurrent.futures import ThreadPoolExecutor
+        workers = min(8, (os.cpu_count() or 2), len(jobs))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            return run_all(lambda: ex.map(lambda j: _process_job(args, *j),
+                                          jobs))
+    return run_all(lambda: (_process_job(args, src, out) for src, out in jobs))
 

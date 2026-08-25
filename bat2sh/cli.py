@@ -1,5 +1,6 @@
 import atexit
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -81,10 +82,42 @@ def _run_script(text):
     with open(_RUN_PATH, 'w') as f:
         f.write(text)
     try:
-        return subprocess.call(['bash', _RUN_PATH])
+        rc = subprocess.call(['bash', _RUN_PATH])
     except OSError as e:
-        sys.stderr.write('cannot run: %s\n' % e)
+        _notify_error('bat2sh', 'cannot run converted script: %s' % e)
         return 127
+    if rc != 0:
+        _notify_error('bat2sh',
+                      'converted script exited with code %d' % rc)
+    return rc
+
+
+def _notify_error(title, text):
+    """When detached from a terminal report errors via a dialog window;
+    fall back to plain stderr otherwise or if no toolkit is available."""
+    if sys.stderr.isatty():
+        sys.stderr.write(text + '\n')
+        return
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(title, text)
+        root.destroy()
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    for argv_ in (('kdialog', '--error', text, '--title', title),
+                  ('zenity', '--error', '--width=400', '--text', text,
+                   '--title', title)):
+        try:
+            if shutil.which(argv_[0]) and \
+                    subprocess.run(argv_).returncode == 0:
+                return
+        except OSError:
+            pass
+    sys.stderr.write(text + '\n')
 
 
 def syntax_check(text):
@@ -186,6 +219,28 @@ def main(argv=None):
             return 1
         return _run_script(result)
 
+    if args.input is not None and args.input != '-' and \
+            not os.path.exists(args.input):
+        # not a path -> the argument IS batch text (e.g. passed by a file
+        # manager or "$(cat x.bat)"): convert it in place
+        text = args.input
+        try:
+            result = Translator().convert(text, clean=args.no_debug)
+        except Exception as e:  # noqa: BLE001
+            print('FAIL  <inline>')
+            sys.stderr.write('conversion error: %s\n' % e)
+            return 1
+        if args.output:
+            with open(args.output, 'w', encoding='utf-8') as f:
+                f.write(result)
+            return 0
+        if args.check:
+            ok, errout = syntax_check(result)
+            print(('OK    <inline>' if ok else 'FAIL  <inline>') +
+                  ('\n' + errout if errout else ''))
+            return 0 if ok else 1
+        return _run_script(result)
+
     jobs = _collect_jobs(args)
     if not jobs:
         print('No .bat/.cmd files found.', file=sys.stderr)
@@ -196,6 +251,7 @@ def main(argv=None):
 
     def run_all(worker):
         rc = 0
+        fails = []
         for r in worker():
             jrc, out_text, err_lines = r
             rc |= jrc
@@ -203,6 +259,14 @@ def main(argv=None):
                 sys.stdout.write(out_text)
             for ln in err_lines:
                 print(ln, file=sys.stderr)
+                if ln.startswith('FAIL'):
+                    fails.append(ln)
+        if fails:
+            extra = len(fails) - 5
+            shown = '\n'.join(fails[:5])
+            if extra > 0:
+                shown += '\n... and %d more' % extra
+            _notify_error('bat2sh', shown)
         return rc
 
     if parallel:

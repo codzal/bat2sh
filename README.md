@@ -66,6 +66,11 @@ Generated scripts need nothing but `bash`: run them with `bash name.sh`.
   backslashes are converted to forward slashes.
 * **Robust input** — UTF-8 (with or without BOM) and UTF-16 batch files
   are decoded automatically.
+* **cmd.exe-style diagnostics** - unknown commands print
+  `'x' is not recognized as an internal or external command…`, missing
+  labels report `The system cannot find the batch label specified - X`
+  (`goto` stops, `call` continues), and when launched without a terminal
+  (e.g. from Dolphin) errors appear in dialog windows instead of stderr.
 
 ---
 

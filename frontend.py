@@ -49,6 +49,7 @@ if bat2sh is None or not _backend_works(bat2sh):
     sys.exit(1)
 
 decode_text = bat2sh.decode_text
+syntax_check = bat2sh.syntax_check
 Translator = bat2sh.Translator
 VERSION = bat2sh.__version__
 ENCODINGS = ['auto', 'utf-8', 'utf-8-sig', 'cp1251', 'cp1252',
@@ -377,17 +378,7 @@ class Bat2ShGUI(tk.Tk):
 
     @staticmethod
     def _bash_check(sh):
-        import subprocess
-        import tempfile
-        fd, path = tempfile.mkstemp(suffix='.sh')
-        try:
-            with os.fdopen(fd, 'w') as f:
-                f.write(sh)
-            r = subprocess.run(['bash', '-n', path],
-                               capture_output=True, text=True)
-            return r.returncode == 0, r.stderr
-        finally:
-            os.unlink(path)
+        return syntax_check(sh)
 
     # browse actions
     def _browse_file(self):

@@ -6,7 +6,26 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Syntax check (compileall)
+        run: python3 -m compileall -q bat2sh frontend.py
+
+      - name: pyflakes
+        run: |
+          pip install pyflakes
+          python3 -m pyflakes bat2sh/*.py frontend.py
+
   test:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -18,11 +37,6 @@ jobs:
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-
-      - name: Static checks
-        run: |
-          python -m compileall -q bat2sh frontend.py
-          pip install pyflakes && python -m pyflakes bat2sh/*.py frontend.py
 
       - name: Convert all examples + bash -n
         run: |

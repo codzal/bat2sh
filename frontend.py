@@ -278,13 +278,6 @@ class Bat2ShGUI(tk.Tk):
                                  command=self._apply_preset)
             setattr(self, 'preset_' + val, rb)
 
-    def _apply_preset(self):
-        style = {'bash': 'root', 'wsl': 'wsl', 'wine': 'wine'}[
-            self.preset_var.get()]
-        try:
-            bat2sh.shell.set_path_style(style)
-        except Exception:
-            pass
         self.strict_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('strict'),
             variable=tk.BooleanVar(value=False))
@@ -413,6 +406,14 @@ class Bat2ShGUI(tk.Tk):
 
         self.columnconfigure(1, weight=1)
         self.rowconfigure(4, weight=1)
+
+    def _apply_preset(self):
+        style = {'bash': 'root', 'wsl': 'wsl', 'wine': 'wine'}[
+            self.preset_var.get()]
+        try:
+            bat2sh.shell.set_path_style(style)
+        except Exception:
+            pass
 
     def _bind_shortcuts(self):
         self.bind('<Control-o>', lambda e: self._browse_file())

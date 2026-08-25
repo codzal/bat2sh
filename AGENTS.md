@@ -67,6 +67,9 @@ pwsh -NoProfile -Command "\$null=[scriptblock]::Create((Get-Content -Raw -Litera
 - `_WIN_ENV` values are full PS expressions (`$env:TMPDIR`) — never brace them.
 - `_q()` braces bare `$names`; otherwise `$i:` parses as a scoped variable.
 - Op splitting is quote-aware; `>&1` tokens are never split on `&`.
+- Arithmetic and numcompares wrap env/args refs with `[int]` (`_int_cast`);
+  otherwise PS concatenates strings (`"2"+1="21"`, `"011"<"3"` lexically).
+- `exit /b` inside a subroutine becomes `return` (PSG.in_func).
 
 ## Conventions
 

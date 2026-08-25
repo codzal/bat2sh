@@ -123,6 +123,12 @@ def _is_dyn_name(name):
     return bool(_DYN_TOK.search(name))
 
 
+def _int_cast(t):
+    """Env vars and call-args arrive as strings; force numeric context."""
+    t = re.sub(r'\$\{env:[A-Za-z_]\w*\}', lambda m: '[int]' + m.group(0), t)
+    return re.sub(r'\$\(\$args\[(\d+)\]\)', r'[int]$($args[\1])', t)
+
+
 def _name_expr(raw):
     """Turn a batch dynamic name (seen_%%w, %~2, map!i!) into a PS string
     expression that evaluates to the variable name at runtime."""
@@ -178,6 +184,7 @@ class PSG:
         self.stats = {'stmts': 0, 'fallback': 0}
         self.loop_var = None
         self._need_reg = False
+        self.in_func = False
         self.dispatch = None
         self.lines = []
 
@@ -245,7 +252,10 @@ class PSG:
             mm = re.match(r'/b\s*(\d+)?$', args, re.I)
             if mm:
                 code = int(mm.group(1)) if mm.group(1) else '$LASTEXITCODE'
-                self.w(ind, 'exit %s' % code)
+                if getattr(self, 'in_func', False):
+                    self.w(ind, 'return %s' % code)
+                else:
+                    self.w(ind, 'exit %s' % code)
             else:
                 self.w(ind, 'exit %s' % (args or '0'))
             return
@@ -412,7 +422,7 @@ class PSG:
         self.w(ind, '$__n = %s' % _name_expr(name_raw))
         self.w(ind, '$__v = Get-Variable -Name $__n -ValueOnly '
                     '-ErrorAction SilentlyContinue')
-        self.w(ind, 'if ($null -eq $__v) { $__v = 0 }')
+        self.w(ind, 'if ($null -eq $__v) { $__v = 0 } else { $__v = [int]$__v }')
         if op:
             self.w(ind, 'Set-Variable -Name $__n -Value ($__v %s %s)'
                    % (op, rhs_e))
@@ -456,9 +466,12 @@ class PSG:
                     name, opch, rhs = om.groups()
                     tgt = ('$env:' + name) if name.isupper() \
                         else '$' + name.lower()
-                    self.w(ind, '%s %s= (%s)'
-                           % (tgt, opch or '', self.expr(rhs.strip(),
-                                                         arith=True)))
+                    rhs_e = _int_cast(self.expr(rhs.strip(), arith=True))
+                    if opch:
+                        self.w(ind, '%s = ([int]%s) %s (%s)'
+                               % (tgt, tgt, opch, rhs_e))
+                    else:
+                        self.w(ind, '%s = (%s)' % (tgt, rhs_e))
                     return
                 # computed names land in Set-Variable
                 gm = re.match(r'"?(.+?)"?\s*([+\-*/])?=\s*"?(.+?)"?\s*$', body)
@@ -473,7 +486,8 @@ class PSG:
             for name, rhs in assignments:
                 tgt = ('$env:' + name) if name.isupper() \
                     else '$' + name.lower()
-                self.w(ind, '%s = (%s)' % (tgt, self.expr(rhs.strip(), arith=True)))
+                self.w(ind, '%s = (%s)' % (tgt,
+                        _int_cast(self.expr(rhs.strip(), arith=True))))
             return
         mm = re.match(r'"?([A-Za-z_][\w.]*)"?=(.*)$', args, re.S)
         if mm:
@@ -630,8 +644,8 @@ class PSG:
             opmap = {'equ': '-eq', 'neq': '-ne', 'lss': '-lt',
                      'leq': '-le', 'gtr': '-gt', 'geq': '-ge'}
             left, op, right = cond
-            test = '%s %s %s' % (self.expr(left), opmap[op],
-                                 self.expr(right))
+            test = '%s %s %s' % (_int_cast(self.expr(left)), opmap[op],
+                                 _int_cast(self.expr(right)))
             line(test)
         elif ctype == 'compare':
             left, right = cond
@@ -654,7 +668,7 @@ class PSG:
         var = d['var'].lower()
         flags, inner, opts = d['flags'], d['inner'], d.get('opts', '')
         if 'l' in flags:
-            nums = [self.expr(x) for x in inner.strip('()').split(',')]
+            nums = [_int_cast(self.expr(x)) for x in inner.strip('()').split(',')]
             if len(nums) == 3:
                 start, step, stop = nums
                 cmpn = '-le' if not step.startswith('-') else '-ge'
@@ -779,11 +793,13 @@ def convert(text):
         start = li + 1
         end = label_pos[pos + 1][0] if pos + 1 < len(label_pos) else len(nodes)
         g.lines = []
+        g.in_func = True
         for j in range(start, end):
             n = nodes[j]
             if n[0] in ('label', 'goto', 'goto_eof'):
                 continue
             g.emit_node(n, 0)
+        g.in_func = False
         head.append('# subroutine: %s' % lname.title())
         head.append('function %s {' % g.func_names[lname])
         head.extend('    ' + l for l in g.lines)

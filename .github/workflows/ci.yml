@@ -61,6 +61,48 @@ jobs:
         run: |
           bash tests/snapshot.sh
 
+  powershell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Convert every example with --target=ps1
+        run: |
+          mkdir -p out
+          fail=0
+          for f in examples/*/*.bat; do
+            b=$(basename "${f%.bat}")
+            python3 -m bat2sh --target=ps1 "$f" "out/$b.ps1" || {
+              echo "CONVERT FAIL $b"; fail=1; }
+          done
+          exit $fail
+
+      - name: Parse-check converted scripts (pwsh)
+        run: |
+          fail=0
+          for p in out/*.ps1; do
+            pwsh -NoProfile -Command "\$null = [scriptblock]::Create((Get-Content -Raw -LiteralPath '$p'))" \
+              || { echo "PARSE FAIL $p"; fail=1; }
+          done
+          exit $fail
+
+      - name: Parse-check shipped ps samples
+        run: |
+          fail=0
+          while IFS= read -r -d '' p; do
+            pwsh -NoProfile -Command "\$null = [scriptblock]::Create((Get-Content -Raw -LiteralPath '$p'))" \
+              || { echo "PARSE FAIL $p"; fail=1; }
+          done < <(find examples -name '*.ps1' -print0)
+          exit $fail
+
+      - name: Run hello-world sample
+        run: pwsh -NoProfile -File examples/basics/ps/01-hello.ps1
+
   legacy-36:
     runs-on: ubuntu-latest
     container: python:3.6-slim

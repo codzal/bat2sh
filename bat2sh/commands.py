@@ -191,8 +191,18 @@ WIN_COMMAND_MAP = {
     'more': lambda a: 'less ' + expand_vars(a),
     'tree': lambda a: 'tree ' + expand_vars(a),
     'ping': lambda a: 'ping ' + expand_vars(a),
-    'netstat': lambda a: 'netstat ' + expand_vars(a),
-    'nslookup': lambda a: 'nslookup ' + expand_vars(a),
+    'netstat': lambda a: (
+        'ss -tulpn' if re.search(r'-a|-n', a, re.I)
+        else ('lsof -i -P -n | grep LISTEN'
+              if re.search(r'\bo\b', a, re.I) else 'ss -tu')),
+    'route': lambda a: 'ip route' if 'print' in a.lower()
+             else 'ip route ' + expand_vars(a),
+    'nslookup': lambda a: 'dig +short ' + expand_vars(
+        re.sub(r'nslookup\s*', '', a, flags=re.I)),
+    'netsh': lambda a: (
+        'nmcli connection show'
+        if re.search(r'wlan.*profiles|show\s+profiles', a, re.I)
+        else ':  # netsh %s' % expand_vars(a)),
     'tracert': lambda a: 'traceroute ' + expand_vars(a),
     'pathping': lambda a: 'ping ' + expand_vars(a),
     'systeminfo': lambda a: 'uname -a',
@@ -239,11 +249,9 @@ WIN_COMMAND_MAP = {
     'bitsadmin': lambda a: ':  # bitsadmin is not emulated',
     'powercfg': lambda a: ':  # powercfg is not emulated',
     'wmic': lambda a: ':  # wmic is not emulated',
-    'netsh': lambda a: ':  # netsh (use ip / networkctl)',
     'nbtstat': lambda a: ':  # nbtstat (use nmblookup)',
     'getmac': lambda a: 'ip -o link',
     'arp': lambda a: 'arp ' + expand_vars(a),
-    'route': lambda a: 'route ' + expand_vars(a),
     'telnet': lambda a: 'telnet ' + expand_vars(a),
     'ftp': lambda a: 'ftp ' + expand_vars(a),
     'tftp': lambda a: 'tftp ' + expand_vars(a),

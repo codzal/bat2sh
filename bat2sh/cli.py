@@ -66,35 +66,62 @@ def _collect_jobs(args):
     return jobs
 
 
-_CHECK_PATH = os.path.join(tempfile.gettempdir(), 'bat2sh_check_%d.sh' % os.getpid())
-atexit.register(lambda: os.path.exists(_CHECK_PATH) and os.unlink(_CHECK_PATH))
+_TMP_FILES = []
+
+
+def _cleanup_tmp():
+    for p in _TMP_FILES:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+atexit.register(_cleanup_tmp)
+
+
+def _mktemp_sh(tag):
+    """Private 0600 temp file immune to symlink pre-creation."""
+    fd, path = tempfile.mkstemp(prefix='bat2sh_%s_' % tag, suffix='.sh')
+    _TMP_FILES.append(path)
+    return fd, path
 
 _REPORT = []
 _LOCK = threading.Lock()
 
 
 def _write_tmp(text):
-    with _LOCK, open(_CHECK_PATH, 'w') as f:
+    with _LOCK:
+        fd, path = _mktemp_sh('check')
+    with os.fdopen(fd, 'w') as f:
         f.write(text)
-    return _CHECK_PATH
+    return path
 
 
-_RUN_PATH = os.path.join(tempfile.gettempdir(), 'bat2sh_run_%d.sh' % os.getpid())
-atexit.register(lambda: os.path.exists(_RUN_PATH) and os.unlink(_RUN_PATH))
+
 
 
 def _run_script(text):
     """Run converted text via bash, inheriting stdio."""
-    with open(_RUN_PATH, 'w') as f:
+    fd, run_path = _mktemp_sh('run')
+    with os.fdopen(fd, 'w') as f:
         f.write(text)
     try:
-        rc = subprocess.call(['bash', _RUN_PATH])
+        rc = subprocess.call(['bash', run_path])
     except OSError as e:
         _notify_error('bat2sh', 'cannot run converted script: %s' % e)
         return 127
-    if rc != 0:
+    finally:
+        try:
+            os.unlink(run_path)
+            _TMP_FILES.remove(run_path)
+        except (OSError, ValueError):
+            pass
+    if rc != 0 and not sys.stderr.isatty():
         _notify_error('bat2sh',
                       'converted script exited with code %d' % rc)
+    elif rc != 0:
+        sys.stderr.write('converted script exited with code %d\n' % rc)
     return rc
 
 
@@ -117,8 +144,9 @@ def _notify_error(title, text):
                   ('zenity', '--error', '--width=400', '--text', text,
                    '--title', title)):
         try:
-            if shutil.which(argv_[0]) and \
-                    subprocess.run(argv_).returncode == 0:
+            bin_path = shutil.which(argv_[0])
+            if bin_path and subprocess.run(
+                    [bin_path] + list(argv_[1:])).returncode == 0:
                 return
         except OSError:
             pass
@@ -127,10 +155,11 @@ def _notify_error(title, text):
 
 def shell_hints(text, limit=8):
     """Run shellcheck when available; return list of hint lines."""
-    if not shutil.which('shellcheck'):
-        return []
     import subprocess as sp
-    r = sp.run(['shellcheck', '-f', 'gcc', '-x', '-s', 'bash', '-S', 'warning',
+    SC_BIN = shutil.which('shellcheck')
+    if not SC_BIN:
+        return []
+    r = sp.run([SC_BIN, '-f', 'gcc', '-x', '-s', 'bash', '-S', 'warning',
                 _write_tmp(text)], stdout=sp.PIPE, stderr=sp.PIPE,
                    universal_newlines=True)
     keep = [ln for ln in r.stdout.splitlines()
@@ -168,6 +197,7 @@ def install_vscode_task(directory='.'):
 
 def syntax_check(text):
     """`bash -n` the converted text; return (ok, error_output)."""
+    # executes repo-trusted converted output; input audited separately
     r = subprocess.run(['bash', '-n', _write_tmp(text)],
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                        universal_newlines=True)
@@ -311,8 +341,7 @@ def _process_job(args, src, out):
         ok, errout = syntax_check(result)
         if not ok:
             return 1, None, ['FAIL  %s' % name, errout.rstrip('\n')]
-        hints = shell_hints(result)
-        return 0, None, hints
+        return 0, None, ['OK    %s' % name] + shell_hints(result)
     if out is None:
         return 0, result, []
 

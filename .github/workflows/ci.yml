@@ -2,6 +2,9 @@ name: CI
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -47,9 +50,14 @@ jobs:
   legacy-36:
     runs-on: ubuntu-latest
     container: python:3.6-slim
+    env:
+      CI_REPO: ${{ github.server_url }}/${{ github.repository }}
     steps:
-      # v4 runner-node needs newer glibc than buster; v3 still serves 3.6
-      - uses: actions/checkout@v3
+      - name: Checkout without node runtime
+        run: |
+          git config --global --add safe.directory "$PWD"
+          git clone --depth=1 "$CI_REPO" .
+
       - name: Oldest supported Python still converts
         run: |
           python -m compileall -q bat2sh frontend.py

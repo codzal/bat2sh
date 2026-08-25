@@ -46,7 +46,7 @@ jobs:
           if [ ! -s notes.md ]; then echo "Release $GITHUB_REF_NAME" > notes.md; fi
 
       - name: Create GitHub Release
-        uses: softprops/action-ghrelease@v2
+        uses: softprops/action-ghrelease@{"message":"Not Found","documentation_url":"https://docs.github.com/rest/git/refs#get-all-references-in-a-namespace","status":"404"} # v2
         with:
           body_path: notes.md
           files: ${{ steps.build.outputs.file }}

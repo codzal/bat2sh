@@ -322,7 +322,6 @@ class Parser:
             flags = self.text[self.i + 1:j].lower()
             self.i = j
         self.skip_ws()
-        # capture optional quoted options string (for /f "tokens=2 delims= ")
         opts = ''
         if self.i < self.n and self.text[self.i] == '"':
             qi = self.text.find('"', self.i + 1)
@@ -335,7 +334,6 @@ class Parser:
         vmm = re.match(r'%%?([A-Za-z])', self.text[self.i:])
         base_dir = ''
         if not vmm and 'r' in flags:
-            # for /r [path] %%v - capture the optional root directory
             pm = re.match(r'("[^"]*"|\S+)', self.text[self.i:])
             if pm and not pm.group(1).lower().startswith(('%', 'in')):
                 j = self.i + pm.end()

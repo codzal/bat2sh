@@ -12,11 +12,7 @@ from .translator import Translator
 
 
 def decode_text(raw, encoding=None):
-    """Decode batch file bytes, tolerating BOMs and common code pages.
-
-    If *encoding* is supplied it is used directly; otherwise the first
-    matching codec out of a sensible default list is chosen.
-    """
+    """Decode raw batch bytes (BOM/codepage autodetect or forced)."""
     if encoding:
         return raw.decode(encoding, errors='replace')
     if raw.startswith(b'\xff\xfe') or raw.startswith(b'\xfe\xff'):
@@ -77,8 +73,7 @@ atexit.register(lambda: os.path.exists(_RUN_PATH) and os.unlink(_RUN_PATH))
 
 
 def _run_script(text):
-    """Execute converted text with bash; stdio is inherited so the script
-    can interact with the terminal (pause, set /p, ...)."""
+    """Run converted text via bash, inheriting stdio."""
     with open(_RUN_PATH, 'w') as f:
         f.write(text)
     try:
@@ -93,8 +88,7 @@ def _run_script(text):
 
 
 def _notify_error(title, text):
-    """When detached from a terminal report errors via a dialog window;
-    fall back to plain stderr otherwise or if no toolkit is available."""
+    """Error dialog when detached from a terminal; else stderr."""
     if sys.stderr.isatty():
         sys.stderr.write(text + '\n')
         return
@@ -106,7 +100,7 @@ def _notify_error(title, text):
         messagebox.showerror(title, text)
         root.destroy()
         return
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     for argv_ in (('kdialog', '--error', text, '--title', title),
                   ('zenity', '--error', '--width=400', '--text', text,
@@ -178,15 +172,13 @@ def _process_job(args, src, out):
                'exit 1\n')
     try:
         result = Translator().convert(text, clean=args.no_debug)
-    except Exception:  # noqa: BLE001
-        # mimic cmd.exe instead of crashing the whole conversion
+    except Exception:
         if args.check:
             return 1, None, ['FAIL  %s' % name,
                              'conversion error: bad batch syntax']
         result = syn
 
     if args.run:
-        # convert -> execute; the script's exit code becomes ours
         return _run_script(result), None, []
 
     if args.check:
@@ -218,7 +210,6 @@ def main(argv=None):
     args = _argparser().parse_args(argv)
 
     if args.input is None:
-        # no argument: piped batch is converted and executed immediately
         if sys.stdin.isatty():
             sys.stderr.write('no input given; pass a file/folder, or pipe '
                              'a batch script: cat x.bat | python3 -m bat2sh\n')
@@ -226,7 +217,7 @@ def main(argv=None):
         text = sys.stdin.read()
         try:
             result = Translator().convert(text, clean=args.no_debug)
-        except Exception:  # noqa: BLE001
+        except Exception:
             result = ('# bat2sh: untranslatable input\n'
                       "echo 'The syntax of the command is incorrect.' >&2\n"
                       'exit 1\n')
@@ -234,12 +225,10 @@ def main(argv=None):
 
     if args.input is not None and args.input != '-' and \
             not os.path.exists(args.input):
-        # not a path -> the argument IS batch text (e.g. passed by a file
-        # manager or "$(cat x.bat)"): convert it in place
         text = args.input
         try:
             result = Translator().convert(text, clean=args.no_debug)
-        except Exception:  # noqa: BLE001
+        except Exception:
             result = ('# bat2sh: untranslatable input\n'
                       "echo 'The syntax of the command is incorrect.' >&2\n"
                       'exit 1\n')
@@ -259,7 +248,6 @@ def main(argv=None):
         print('No .bat/.cmd files found.', file=sys.stderr)
         return 1
 
-    # streaming modes stay sequential; batch file jobs run in parallel
     parallel = len(jobs) > 1 and not args.run and \
         (args.check or all(out for _s, out in jobs))
 

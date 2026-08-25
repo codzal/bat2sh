@@ -94,7 +94,6 @@ class Translator:
         mb = re.match(r'"?([^"]+\.(?:bat|cmd))"?\s*(.*)$',
                       cmdline.strip(), re.IGNORECASE)
         if mb:
-            # cmd /c other.bat -> run the converted sibling script
             sh = re.sub(r'\.(bat|cmd)$', '.sh', mb.group(1),
                         flags=re.IGNORECASE)
             if '/' not in sh and not sh.startswith('.'):
@@ -134,8 +133,7 @@ class Translator:
             mci = re.search(r'(!|%)([A-Za-z_][\w.]*):(%%[A-Za-z])=(%%[A-Za-z])\1',
                             val)
             if mci:
-                # `!var:%%c=%%c!` with loop vars: batch replaces
-                # case-insensitively, bash ${} cannot - use the helper
+                # batch replacement is case-insensitive; bash is not
                 self._need_ci = True
                 target = expand_vars(mci.group(2)).replace('.', '_')
                 return 'ci_replace %s %s "$%s" "$%s"' % (
@@ -160,7 +158,6 @@ class Translator:
             return 'echo'
         if a.startswith('.'):
             a = a[1:]
-        # split off redirection (>, >>, <) so literal '>=' text is preserved
         msg, redir = split_redir(a)
         msg = expand_vars(msg)
         if msg and any(ch in msg for ch in '()&|;<>') and \
@@ -283,8 +280,6 @@ class Translator:
     def cmd_call_ext(self, args):
         a = args.strip()
         if re.match(r'set\b', a, re.IGNORECASE):
-            # `call set VAR=value` (return-across-endlocal idiom) is a plain
-            # assignment in bash
             return self.cmd_set(expand_vars(a[3:].strip()))
         mm = re.match(r'("?)([^" ]+)\1(.*)$', a)
         if mm:
@@ -361,12 +356,11 @@ class Translator:
             sub = node[1].upper()
             tgt = self.label_map.get(sub)
             if tgt is None:
-                # cmd prints this and keeps running with errorlevel 1
                 return ['{ echo "The system cannot find the batch label '
                         'specified - %s" >&2; ERRORLEVEL=1; false; }' % sub]
             args = expand_vars(node[2])
             if sub in self.func_names:
-                # plain function call: safe inside loops and if-blocks
+                # plain call keeps working inside loops/if-blocks
                 return [self._save_args(),
                         'ARGS=()' if args.strip() == '' else 'ARGS=(%s)' % args,
                         self.func_names[sub], self._restore_args()]
@@ -469,7 +463,6 @@ class Translator:
             else:
                 lines.append('for %s in %s; do' % (var, expand_vars(d['inner'])))
         elif 'r' in flags:
-            # for /r [root] %%v in (patterns) - recursive file walk via find
             root = winpath(expand_vars(d.get('base_dir', '') or '.')).strip('"')
             pats = [p.strip().strip('"') for p in
                     expand_vars(d['inner']).strip('()').split()]
@@ -526,10 +519,9 @@ class Translator:
                 fname = inner2.strip('()').strip()
                 src = '< "%s"' % winpath(fname)
 
-            # parse "tokens=" / "delims=" / "skip=" options
             dm = re.search(r'delims=("?)([^"\s]*)\1', opts, re.IGNORECASE)
             if dm:
-                # empty delims= means "no splitting at all" in batch
+                # delims= (empty) disables splitting entirely
                 dch = dm.group(2)
                 read_split = ('IFS=%s read -ra _arr <<< "$_line" || true'
                               % (shlex.quote(dch) if dch else "''"))
@@ -563,28 +555,23 @@ class Translator:
             per_iter = [read_split]
 
             def _rest_from(n):
-                # text from the start of token n to end of line
                 per_iter.append('_anchor="${_arr[%d]:-}"' % (n - 1))
                 per_iter.append('_pre="${_line%%"${_anchor}"*}"')
                 per_iter.append('_incl="${_line:${#_pre}}"')
 
             if elements == ['*']:
-                # tokens=*: whole line with surrounding whitespace trimmed
                 per_iter[0] = 'IFS=$\' \\t\' read -r %s <<< "$_line" || true' % var
             elif star_tok is not None and not nums:
-                # "N*": var gets token N, next var gets remainder after it
                 per_iter.append('%s="${_arr[%d]}"' % (chr(base), star_tok - 1))
                 _rest_from(star_tok)
                 nxt = chr(base + 1)
                 per_iter.append('%s="${_incl#*"${_anchor}"}"' % nxt)
                 if delim_class:
-                    # batch skips the delimiter run after token N
                     per_iter.append('%s="${%s#%s}"' % (nxt, nxt, delim_class))
             else:
                 for k, idx in enumerate(nums):
                     per_iter.append('%s="${_arr[%d]}"' % (chr(base + k), idx))
                 if star_tok is not None:
-                    # "a,N*": last var holds token N through end of line
                     letter = chr(base + len(nums))
                     _rest_from(max(star_tok, 1))
                     per_iter.append('%s="${_incl}"' % letter)
@@ -620,10 +607,8 @@ class Translator:
         s = line.strip()
         if s.startswith('# Converted from a Windows batch file by bat2sh'):
             return True
-        # converter-injected helper/explanation comments
         if re.match(r'^\s*# choice: emulate', line):
             return True
-        # converter-injected placeholder comments (echo off, chcp, mode, ...)
         if re.match(r'^\s*:\s+#', line):
             return True
         return False
@@ -637,8 +622,8 @@ class Translator:
             if n[0] == 'label':
                 self.label_map[n[1].upper()] = i
 
-        # labels that are only ever CALLed become real bash functions so a
-        # call works inside loops/if-blocks (a PC jump would abandon them)
+        # call-only labels become bash functions so calls work inside
+        # loops/if-blocks (a PC jump would abandon them)
         def _walk(ns):
             for n in ns:
                 yield n

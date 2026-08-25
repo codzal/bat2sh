@@ -53,6 +53,9 @@ jobs:
     env:
       CI_REPO: ${{ github.server_url }}/${{ github.repository }}
     steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+
       - name: Checkout without node runtime
         run: |
           git config --global --add safe.directory "$PWD"

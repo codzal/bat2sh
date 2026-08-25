@@ -20,19 +20,40 @@ _WIN_ENV = {
 }
 
 
-def _ps_value(text):
-    """%VAR% / !VAR! / %%a -> PowerShell variable syntax."""
-    text = re.sub(r'%%([A-Za-z])\b', r'$\1', text)
-    text = re.sub(r'[!%]([A-Za-z_][\w.]*)[!%]',
-                  lambda m: _ps_name(m.group(1)), text)
-    return text
+def _ps_inner(name):
+    if name.upper() in _WIN_ENV:
+        return _WIN_ENV[name.upper()]
+    if name.isupper():
+        return 'env:%s' % name
+    return name.replace('.', '_').lower()
 
 
 def _ps_name(name):
-    if name.upper() in _WIN_ENV and '.' not in name:
-        return _WIN_ENV[name.upper()]
-    return ('$_env_' if False else '$env:') + name if name.isupper() \
-        else '$' + name.replace('.', '_')
+    return '${' + _ps_inner(name) + '}'
+
+
+def _ps_value(text, arith=False, loop_var=None):
+    if arith:
+        # in set /a a doubled % is the modulo operator; only the ACTIVE
+        # for-loop letter is a variable reference
+        if loop_var:
+            text = re.sub(re.escape('%%' + loop_var) + r'\b',
+                          '$%s' % loop_var, text)
+            text = re.sub(r'%%+(?![%w])', '%', text)
+        else:
+            text = re.sub(r'%%+', '%', text)
+        text = re.sub(r'%(?!%)((?:[1-9]))',
+                      lambda m: '$($args[%d])' % (int(m.group(1)) - 1), text)
+        return text
+    """%VAR% / !VAR! / %1 / %%a -> PowerShell variable syntax."""
+    text = re.sub(r'%%([A-Za-z])\b', r'$\1', text)          # loop variables
+    text = re.sub(r'[!%]([A-Za-z_][\w.]*)[!%]',
+                  lambda m: '${' + _ps_inner(m.group(1)) + '}', text)
+    text = re.sub(r'%(?!%)([A-Za-z_]\w*)',
+                  lambda m: '${' + _ps_inner(m.group(1)) + '}', text)
+    text = re.sub(r'%(?!%)([1-9])',
+                  lambda m: '$($args[%d])' % (int(m.group(1)) - 1), text)
+    return text.replace('%%', '%')
 
 
 def _q(text):
@@ -113,8 +134,9 @@ class PSG:
         self.w(indent, '# BAT2SH WARNING (ps1): no translation for: %s' % raw)
 
     # ---------------- expressions ----------------
-    def expr(self, text):
-        t = _ps_value(text)
+    def expr(self, text, arith=False):
+        t = _ps_value(text, arith=arith,
+                      loop_var=getattr(self, 'loop_var', None))
         # set /a style arithmetic is native in parens; keep as-is
         t = re.sub(r'\bEQU\b', '-eq', t, flags=re.I)
         t = re.sub(r'\bNEQ\b', '-ne', t, flags=re.I)
@@ -122,6 +144,13 @@ class PSG:
         t = re.sub(r'\bLEQ\b', '-le', t, flags=re.I)
         t = re.sub(r'\bGTR\b', '-gt', t, flags=re.I)
         t = re.sub(r'\bGEQ\b', '-ge', t, flags=re.I)
+
+        def _pref(m):
+            name = m.group(0)
+            return ('${env:%s}' % name.upper()) if name.isupper() \
+                else '${%s}' % name.lower()
+
+        t = re.sub(r'(?<![\w$.{:])([A-Za-z_]\w*)', _pref, t)
         return t
 
     # ---------------- commands ----------------
@@ -163,6 +192,9 @@ class PSG:
                 self.w(ind, 'exit %s' % code)
             else:
                 self.w(ind, 'exit %s' % (args or '0'))
+            return
+        if cmd in ('setlocal', 'endlocal'):
+            self.w(ind, '# %s (scoping no-op)' % cmd)
             return
         if cmd == 'color':
             self.warn(ind, st)
@@ -315,14 +347,17 @@ class PSG:
             return
         mm = re.match(r'/a\s+(.+)$', args, re.I)
         if mm:
-            expr = self.expr(mm.group(1))
-            nm = re.match(r'\s*([A-Za-z_]\w*)\s*=(.+)$', expr)
-            if nm:
-                tgt = ('$env:' + nm.group(1)) if nm.group(1).isupper() \
-                    else '$' + nm.group(1).lower()
-                self.w(ind, '%s = (%s)' % (tgt, nm.group(2).strip()))
-            else:
-                self.w(ind, '$null = (%s)' % expr)
+            body = mm.group(1)
+            assignments = re.findall(
+                r'([A-Za-z_]\w*)\s*=\s*([^,]+?)(?=\s*,|'
+                r'\s+[A-Za-z_]\w*\s*=|$)', body)
+            if not assignments:
+                self.w(ind, '$null = (%s)' % self.expr(body))
+                return
+            for name, rhs in assignments:
+                tgt = ('$env:' + name) if name.isupper() \
+                    else '$' + name.lower()
+                self.w(ind, '%s = (%s)' % (tgt, self.expr(rhs.strip(), arith=True)))
             return
         mm = re.match(r'"?([A-Za-z_][\w.]*)"?=(.*)$', args, re.S)
         if mm:
@@ -576,11 +611,12 @@ def convert(text):
         head += REG_HELPERS_PS.splitlines()
         head.append('')
 
+    first_sub = next((i for i, n in indexed
+                      if n[0] == 'label' and n[1].upper() in called),
+                     None)
     for i, n in indexed:
-        if n[0] == 'label' and i < len(nodes) - 1:
-            nxt = nodes[i + 1]
-            if nxt[0] == 'simple' and nxt[1].strip().lower().startswith('exit'):
-                break                      # trailing exit-only tail
+        if first_sub is not None and i >= first_sub:
+            break                          # subroutine region starts here
         if n[0] == 'label':
             continue
         g.emit_node(n, 0)

@@ -211,8 +211,7 @@ def main(argv=None):
 
     if args.input is None:
         if sys.stdin.isatty():
-            sys.stderr.write('no input given; pass a file/folder, or pipe '
-                             'a batch script: cat x.bat | python3 -m bat2sh\n')
+            _argparser().print_help(sys.stderr)
             return 1
         text = sys.stdin.read()
         try:

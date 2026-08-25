@@ -226,9 +226,9 @@ def _argparser():
     ap.add_argument('-r', '--run', action='store_true',
                     help='Convert and execute immediately via bash '
                          '(nothing is written to disk)')
-    ap.add_argument('-n', '--no-debug', action='store_true',
-                    help='Strip converter-injected comments/placeholders; keep only '
-                         'comments present in the original batch file')
+    ap.add_argument('-d', '--debug', action='store_true',
+                    help='Keep converter debug comments in the output '
+                         '(output is clean by default)')
     ap.add_argument('-C', '--no-clobber', action='store_true',
                     help="Don't overwrite existing output files")
     ap.add_argument('-q', '--quiet', action='store_true',
@@ -299,7 +299,7 @@ def _process_job(args, src, out):
     try:
         tr = Translator()
         tr._rules = load_rules()
-        result = tr.convert(text, clean=args.no_debug,
+        result = tr.convert(text, clean=not args.debug,
                             shebang=args.shebang,
                             strict=args.strict_bash)
         stats = dict(tr.stats)
@@ -396,7 +396,7 @@ def main(argv=None):
             return 1
         text = sys.stdin.read()
         try:
-            result = Translator().convert(text, clean=args.no_debug)
+            result = Translator().convert(text, clean=not args.debug)
         except Exception:
             result = ('# bat2sh: untranslatable input\n'
                       "echo 'The syntax of the command is incorrect.' >&2\n"
@@ -407,7 +407,7 @@ def main(argv=None):
             not os.path.exists(args.input):
         text = args.input
         try:
-            result = Translator().convert(text, clean=args.no_debug)
+            result = Translator().convert(text, clean=not args.debug)
         except Exception:
             result = ('# bat2sh: untranslatable input\n'
                       "echo 'The syntax of the command is incorrect.' >&2\n"

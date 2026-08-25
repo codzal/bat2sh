@@ -4,6 +4,24 @@ All notable changes to **bat2sh** are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/) (pre-1.0 — minor = breaking).
 
+## [0.4] — 2026-08-25
+
+### Added
+- Stable drag & drop of `.bat/.cmd` files into the GUI
+  (optional `tkinterdnd2`; graceful fallback without it).
+- Cross-platform polish: native monospace font in the viewer, bash binary
+  resolved through PATH with a clear message on Windows.
+- `-d/--debug` keeps converter comments; output is clean by default.
+
+### Changed
+- **Breaking:** `-n/--no-debug` removed (clean output is the default).
+- GUI: quiet checkbox removed; debug checkbox added instead.
+- Logo aligned to the left; documentation refreshed.
+
+### Fixed
+- Generated script was not displayed in the dual-pane preview
+  (geometry manager conflict inside the PanedWindow).
+
 ## [0.3] — 2026-08-25
 
 ### Added

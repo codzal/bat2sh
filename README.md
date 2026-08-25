@@ -1,8 +1,6 @@
 # bat2sh — Windows Batch to Shell Converter
 
-<p align="center">
-  <img src="assets/logo.jpeg" alt="bat2sh" width="160">
-</p>
+<img src="assets/logo.jpeg" width="120" align="left" alt="bat2sh logo">
 
 **English** | [Русский](README_RU.md)
 
@@ -112,7 +110,6 @@ python3 -m bat2sh -c examples/
 | `-i`, `--inplace` | Write `<input>.sh` beside the input file |
 | `-o`, `--output-dir DIR` | Write outputs into `DIR` (mirrors the folder tree for directories; places `<name>.sh` there for a single file) |
 | `-c`, `--check` | Only run `bash -n` on the result; no files written |
-| `-n`, `--no-debug` | Strip converter-injected comments/placeholders; keep only comments from the original batch file |
 | `-C`, `--no-clobber` | Don't overwrite existing output files |
 | `-r`, `--run` | Convert and execute immediately (nothing written) |
 | `--path-style {wsl,wine,root}` | Drive-letter mapping style |
@@ -120,6 +117,7 @@ python3 -m bat2sh -c examples/
 | `-x`, `--executable` | chmod +x written .sh files |
 | `--diff` | Show batch vs bash side by side |
 | `--strict-bash` | Insert `set -euo pipefail` |
+| `-d`, `--debug` | Keep converter debug comments (output is clean by default) |
 | `--analyze` / `--report FILE` | Compatibility audit / migration report |
 | `--runtime-layer` | Inject errorlevel + drive-symlink helpers |
 | `--target {bash,ps1}` | Output language (ps1 is beta) |

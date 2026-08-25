@@ -1,8 +1,6 @@
 # bat2sh — конвертер Windows Batch в Shell
 
-<p align="center">
-  <img src="assets/logo.jpeg" alt="bat2sh" width="160">
-</p>
+<img src="assets/logo.jpeg" width="120" align="left" alt="bat2sh logo">
 
 [English](README.md) | **Русский**
 
@@ -116,7 +114,6 @@ python3 -m bat2sh -c examples/
 | `-i`, `--inplace` | Записать `<input>.sh` рядом с входным файлом |
 | `-o`, `--output-dir DIR` | Писать вывод в `DIR` (для папки сохраняет дерево каталогов; для одного файла кладёт `<name>.sh` туда) |
 | `-c`, `--check` | Только прогнать `bash -n`; файлы не пишутся |
-| `-n`, `--no-debug` | Убрать служебные комментарии/заглушки конвертера; оставить только комментарии исходника |
 | `-C`, `--no-clobber` | Не перезаписывать существующие файлы |
 | `-r`, `--run` | Конвертировать и сразу выполнить (ничего не записывается) |
 | `--path-style {wsl,wine,root}` | Стиль отображения дисков |
@@ -124,6 +121,7 @@ python3 -m bat2sh -c examples/
 | `-x`, `--executable` | Делать записанные .sh исполняемыми |
 | `--diff` | Показать batch и bash бок о бок |
 | `--strict-bash` | Вставить `set -euo pipefail` |
+| `-d`, `--debug` | Оставить отладочные комментарии конвертера (по умолчанию вывод чистый) |
 | `--analyze` / `--report FILE` | Аудит совместимости / отчёт миграции |
 | `--runtime-layer` | Хелперы errorlevel + симлинки дисков |
 | `--target {bash,ps1}` | Язык результата (ps1 — бета) |

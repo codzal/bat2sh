@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Converted from a Windows batch file by bat2sh.
 set -o pipefail
-shopt -s nocasematch   # emulate "if /i" case-insensitive compares
+shopt -s nocasematch
 
 CALL_STACK=()
 ARGS_STACK=()
@@ -17,7 +16,6 @@ command_not_found_handle() {
     return 1
 }
 
-# choice: emulate the batch CHOICE command
 choice() {
     local opts="" prompt="" default="" t=""
     while [ $# -gt 0 ]; do
@@ -50,7 +48,6 @@ choice() {
 
 # subroutine: Searchdir
 sub_searchdir() {
-    :  # setlocal
     target_dir="${ARGS[0]}"
     ERRORLEVEL=$?
     extension="${ARGS[1]}"
@@ -79,18 +76,15 @@ sub_searchdir() {
         if [ ${#ARGS_STACK[@]} -gt 0 ]; then IFS=$'\x1f' read -ra ARGS <<<"${ARGS_STACK[-1]}"; unset "ARGS_STACK[-1]"; fi
     done < <(dir /b /a:d "${target_dir}" 2>nul)
     ERRORLEVEL=$?
-    :  # endlocal
     return
     ERRORLEVEL=$?
 }
 
 dispatch() {
     case $PC in    0)
-        :  # echo off
         PC=1
         ;;
     1)
-        :  # setlocal
         PC=2
         ;;
     2)
@@ -134,7 +128,6 @@ dispatch() {
         PC=10
         ;;
     10)
-        :  # setlocal
         PC=11
         ;;
     11)
@@ -181,7 +174,6 @@ dispatch() {
         PC=16
         ;;
     16)
-        :  # endlocal
         PC=17
         ;;
     17)

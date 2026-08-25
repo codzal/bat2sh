@@ -68,10 +68,10 @@ STRINGS = {
         'out_inplace': 'Next to input (name.sh)',
         'out_file': 'Choose file:', 'out_outdir': 'Output directory:',
         'out_stdout': 'Preview only (do not write)',
-        'encoding': 'Encoding:', 'chk': 'Syntax-check only (-c)',
-        'clean': 'Clean output (-n)',
-        'noclobber': "Don't overwrite existing (-C)",
-        'quiet': 'Quiet (-q)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
+        'encoding': 'Encoding:', 'chk': 'Syntax-check only',
+        'clean': 'Clean output',
+        'noclobber': "Don't overwrite existing",
+        'quiet': 'Quiet', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
         'ready': 'Ready.', 'preview': 'Generated shell script',
     }
 }
@@ -128,6 +128,19 @@ class Bat2ShGUI(tk.Tk):
         self._bind_shortcuts()
         self._sync_output_state()
         self._apply_lang()
+
+    def _flag(self, short):
+        """Flag pair for *short* taken from the backend CLI (same source
+        that renders -h); empty string if unavailable."""
+        try:
+            from bat2sh.cli import _argparser
+            for act in _argparser()._actions:
+                if short in act.option_strings:
+                    return ' (%s)' % '/'.join(
+                        o for o in act.option_strings if o.startswith('-'))
+        except Exception:
+            pass
+        return ''
 
     def _t(self, key):
         return LANGS.get(self.lang, STRINGS['en']).get(
@@ -243,16 +256,16 @@ class Bat2ShGUI(tk.Tk):
                                       state='readonly')
 
         self.check_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('chk'),
+            self.opt_frame, text=self._t('chk') + self._flag('-c'),
             variable=self.check_var)
         self.clean_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('clean'),
+            self.opt_frame, text=self._t('clean') + self._flag('-n'),
             variable=self.clean_var)
         self.noclobber_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('noclobber'),
+            self.opt_frame, text=self._t('noclobber') + self._flag('-C'),
             variable=self.noclobber_var)
         self.quiet_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('quiet'),
+            self.opt_frame, text=self._t('quiet') + self._flag('-q'),
             variable=self.quiet_var)
 
         self.convert_btn = ttk.Button(self, text=self._t('convert'),

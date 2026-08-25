@@ -35,7 +35,9 @@ jobs:
       - name: Runtime smoke (self-cleaning examples only)
         run: |
           for f in examples/basics/01_hello_world.bat examples/advanced/10_ini_parser.bat; do
-            timeout 10 bash <(python3 -m bat2sh "$f") > /dev/null || exit 1
+            d=$(dirname "$f"); b=$(basename "$f")
+            ( cd "$d" && PYTHONPATH="$GITHUB_WORKSPACE" \
+              timeout 10 python3 -m bat2sh -r "$b" > /dev/null ) || exit 1
           done
 
       - name: Snapshot tests

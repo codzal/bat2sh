@@ -44,6 +44,18 @@ jobs:
         run: |
           bash tests/snapshot.sh
 
+  legacy-36:
+    runs-on: ubuntu-latest
+    container: python:3.6-slim
+    steps:
+      # v4 runner-node needs newer glibc than buster; v3 still serves 3.6
+      - uses: actions/checkout@v3
+      - name: Oldest supported Python still converts
+        run: |
+          python -m compileall -q bat2sh frontend.py
+          python -m bat2sh examples/basics/01_hello_world.bat > /tmp/h.sh
+          bash -n /tmp/h.sh
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:

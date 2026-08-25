@@ -31,7 +31,9 @@ def _backend_works(mod):
     for flag in ('-v', '--version'):
         try:
             r = subprocess.run([sys.executable, '-m', 'bat2sh', flag],
-                               capture_output=True, text=True,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               universal_newlines=True,
                                env=env, timeout=10)
         except (OSError, subprocess.TimeoutExpired):
             return False

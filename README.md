@@ -2,6 +2,16 @@
 
 **English** | [Русский](README_RU.md)
 
+[![CI](https://github.com/codzal/bat2sh/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/codzal/bat2sh/actions/workflows/ci.yml) [![CodeQL](https://github.com/codzal/bat2sh/actions/workflows/codeql.yml/badge.svg)](https://github.com/codzal/bat2sh/security/code-scanning) ![python](https://img.shields.io/badge/python-3.6%2B-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![status](https://img.shields.io/badge/status-beta-orange)
+
+## Contents
+
+[Quick start](#quick-start) · [Features](#features) ·
+[CLI reference](#command-line-usage) · [GUI](#graphical-interface) ·
+[Examples](#examples) · [How it works](#how-it-works) ·
+[Limitations](#limitations) · [Security](SECURITY.md) ·
+[Wiki (RU)](https://github.com/codzal/bat2sh/wiki)
+
 `bat2sh` translates Windows batch (`.bat` / `.cmd`) scripts into POSIX
 `bash` scripts. It is a best-effort, block-oriented translator that handles
 the constructs most real-world batch files use, so the generated `.sh`

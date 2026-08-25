@@ -4,6 +4,7 @@ __pycache__/
 
 # Generated shell scripts (produced by bat2sh itself)
 *.sh
+!tests/expected/*.sh
 
 # OS / editor noise
 .DS_Store

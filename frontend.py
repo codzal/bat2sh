@@ -123,6 +123,7 @@ class Bat2ShGUI(tk.Tk):
         self.noclobber_var = tk.BooleanVar(value=False)
         self.quiet_var = tk.BooleanVar(value=False)
         self.encoding_var = tk.StringVar(value='auto')
+        self.preset_var = tk.StringVar(value='wsl')
 
         self._build_widgets()
         self._layout()
@@ -243,6 +244,16 @@ class Bat2ShGUI(tk.Tk):
                                       values=ENCODINGS, width=12,
                                       state='readonly')
 
+        self.preset_lbl = ttk.Label(self.opt_frame, text='Target:')
+        for val, lbl in (('bash', 'Pure Bash'), ('wsl', 'WSL'),
+                         ('wine', 'Wine-friendly')):
+            rb = ttk.Radiobutton(self.opt_frame, value=val,
+                                 variable=self.preset_var, text=lbl)
+            setattr(self, 'preset_' + val, rb)
+        self.strict_btn = ttk.Checkbutton(
+            self.opt_frame, text='set -euo pipefail',
+            variable=tk.BooleanVar(value=False))
+
         self.check_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('chk'),
             variable=self.check_var)
@@ -265,13 +276,59 @@ class Bat2ShGUI(tk.Tk):
         self.progress = ttk.Progressbar(self, orient='horizontal',
                                         mode='determinate', maximum=100)
 
-        self.status_lbl = ttk.Label(self, text=self._t('ready'),
-                                    anchor='w')
+        self.status_lbl = ttk.Label(
+            self, text=self._t('ready') + '  [beta]', anchor='w')
 
         self.preview_frame = ttk.LabelFrame(
             self, text=self._t('preview'))
+        pane = tk.PanedWindow(self.preview_frame, orient=tk.HORIZONTAL,
+                              sashrelief=tk.RAISED)
+        self.orig = scrolledtext.ScrolledText(
+            pane, wrap=tk.NONE, font=('Courier New', 10), width=40)
         self.preview = scrolledtext.ScrolledText(
-            self.preview_frame, wrap=tk.NONE, font=('Courier New', 10))
+            pane, wrap=tk.NONE, font=('Courier New', 10))
+        pane.add(self.orig)
+        pane.add(self.preview)
+        self.orig.configure(state=tk.DISABLED)
+        self._orig_yview = self.orig.yview
+        self.orig['yscrollcommand'] = lambda f, t: (
+            self.preview.yview_moveto(f) if not getattr(
+                self, '_syncing', False) else None)
+        self.preview['yscrollcommand'] = self._sync_scroll
+        for wdg in (self.orig, self.preview):
+            wdg.tag_configure('kw', foreground='#2a6fdb')
+            wdg.tag_configure('str', foreground='#b0560f')
+            wdg.tag_configure('com', foreground='#3d8f3d')
+
+    def _sync_scroll(self, first, last):
+        if getattr(self, '_syncing', False):
+            return
+        self._syncing = True
+        try:
+            self.orig.yview_moveto(first)
+            self.preview.yview_moveto(first)
+        finally:
+            self._syncing = False
+
+    @staticmethod
+    def _highlight(widget, kind):
+        data = widget.get('1.0', tk.END)
+        widget.tag_remove('kw', '1.0', tk.END)
+        widget.tag_remove('com', '1.0', tk.END)
+        widget.tag_remove('str', '1.0', tk.END)
+        import re as _re
+        kws = (r'\b(if|not|exist|defined|errorlevel|else|for|do|done|goto|'
+               r'call|set|setlocal|endlocal|echo|exit|shift|pause|then|fi|'
+               r'while|case|esac|local|function|return|in)\b') \
+            if kind == 'bat' else \
+            (r'\b(if|then|fi|for|do|done|while|case|esac|local|function|'
+             r'return|in|set|echo)\b')
+        for m in _re.finditer(kws, data):
+            widget.tag_add('kw', '1.0+%dc' % m.start(),
+                           '1.0+%dc' % m.end())
+        for m in _re.finditer(r'(?:^|\s)(rem [^\n]*|#[^\n]*)', data):
+            widget.tag_add('com', '1.0+%dc' % (m.start(1)),
+                           '1.0+%dc' % m.end(1))
 
     def _layout(self):
         pad = dict(padx=8, pady=4)
@@ -299,6 +356,10 @@ class Bat2ShGUI(tk.Tk):
         self.clean_btn.grid(row=4, column=2, columnspan=2, sticky='w', **pad)
         self.noclobber_btn.grid(row=5, column=0, columnspan=2, sticky='w', **pad)
         self.quiet_btn.grid(row=5, column=2, columnspan=2, sticky='w', **pad)
+        self.preset_lbl.grid(row=6, column=0, sticky='w', padx=6, pady=2)
+        self.preset_bash.grid(row=6, column=1, sticky='w', padx=4, pady=2)
+        self.preset_wsl.grid(row=6, column=2, sticky='w', padx=4, pady=2)
+        self.preset_wine.grid(row=6, column=3, sticky='w', padx=4, pady=2)
         for c in (1, 2):
             self.opt_frame.columnconfigure(c, weight=1)
         self.opt_frame.columnconfigure(5, weight=0)
@@ -349,11 +410,18 @@ class Bat2ShGUI(tk.Tk):
         except OSError:
             pass
 
-    def _set_preview(self, text):
+    def _set_preview(self, text, source=None):
         self.preview.configure(state=tk.NORMAL)
         self.preview.delete('1.0', tk.END)
         self.preview.insert('1.0', text)
         self.preview.configure(state=tk.DISABLED)
+        self._highlight(self.preview, 'sh')
+        if source is not None:
+            self.orig.configure(state=tk.NORMAL)
+            self.orig.delete('1.0', tk.END)
+            self.orig.insert('1.0', source)
+            self.orig.configure(state=tk.DISABLED)
+        self._highlight(self.orig, 'bat')
 
     def _status(self, msg, error=False):
         if self.quiet_var.get() and not error:
@@ -454,7 +522,7 @@ class Bat2ShGUI(tk.Tk):
 
         mode = self.out_mode.get()
         if mode == 'stdout':
-            self._set_preview(sh)
+            self._set_preview(sh, data)
             self._status('Preview ready (not written to disk).')
             return
 
@@ -472,7 +540,7 @@ class Bat2ShGUI(tk.Tk):
         except OSError as e:
             self._status('Write error: %s' % e, error=True)
             return
-        self._set_preview(sh)
+        self._set_preview(sh, data)
         self._status('Wrote %s' % dst)
 
     def _convert_folder(self, folder):

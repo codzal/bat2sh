@@ -13,6 +13,10 @@ batch (Windows)  ──►  bash (Linux / macOS / WSL)
 
 ---
 
+> **Status: beta (v0.3).** Many commands and edge cases are still being
+> implemented — audit your scripts with `--analyze` / `-c` before relying
+> on the output.
+
 ## Quick start
 
 ```bash
@@ -64,6 +68,20 @@ Generated scripts need nothing but `bash`: run them with `bash name.sh`.
   `ipconfig`→`ip`, `setx`→`export`, `timeout`→`sleep`, …).
 * **Path translation** — `C:\dir\file` becomes `/mnt/c/dir/file` and
   backslashes are converted to forward slashes.
+* **Audit & reports** — `--analyze` flags registry access, Windows binaries
+  (`wine` or native-equivalent suggestions) and service management;
+  `--report out.md|.html` writes a migration report with per-file coverage.
+* **PowerShell target (beta)** — `--target=ps1` emits PowerShell instead of
+  bash for common constructs.
+* **shellcheck** hints run automatically with `-c` when installed.
+* **Editor integration** — `--install-vscode-task [DIR]` creates a one-key
+  convert task for VS Code / VSCodium.
+* **Runtime layer** — `--runtime-layer` injects `check_errorlevel()` and
+  `/tmp/bat2sh_drives/<X>` symlinks; `--strict-bash` inserts
+  `set -euo pipefail`; `-x` marks outputs executable.
+* **Custom command rules** — map your own tools in
+  `~/.config/bat2sh/config.toml`:
+  `[commands] my_tool = "mytool-linux {args}"`.
 * **Robust input** — UTF-8 (with or without BOM) and UTF-16 batch files
   are decoded automatically.
 * **cmd.exe-style diagnostics** - unknown commands print
@@ -113,6 +131,15 @@ python3 -m bat2sh -c examples/
 | `-c`, `--check` | Only run `bash -n` on the result; no files written |
 | `-n`, `--no-debug` | Strip converter-injected comments/placeholders; keep only comments from the original batch file |
 | `-C`, `--no-clobber` | Don't overwrite existing output files |
+| `-r`, `--run` | Convert and execute immediately (nothing written) |
+| `--path-style {wsl,wine,root}` | Drive-letter mapping style |
+| `--shebang STR` | Interpreter line for generated scripts |
+| `-x`, `--executable` | chmod +x written .sh files |
+| `--diff` | Show batch vs bash side by side |
+| `--strict-bash` | Insert `set -euo pipefail` |
+| `--analyze` / `--report FILE` | Compatibility audit / migration report |
+| `--runtime-layer` | Inject errorlevel + drive-symlink helpers |
+| `--target {bash,ps1}` | Output language (ps1 is beta) |
 | `-q`, `--quiet` | Suppress informational messages (errors are still shown) |
 | `--encoding ENC` | Force input decoding with this codec (e.g. `cp1251`, `latin-1`); default is auto-detect |
 | `--version` | Print the version and exit |

@@ -835,7 +835,7 @@ command_not_found_handle() {
     printf "'%s' is not recognized as an internal or external command,\\n" "$1" >&2
     echo "operable program or batch file." >&2
     ERRORLEVEL=9009
-    return 9009
+    return 1
 }
 
 # choice: emulate the batch CHOICE command

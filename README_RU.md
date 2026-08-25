@@ -1,5 +1,9 @@
 # bat2sh — конвертер Windows Batch в Shell
 
+<p align="center">
+  <img src="assets/logo.jpeg" alt="bat2sh" width="160">
+</p>
+
 [English](README.md) | **Русский**
 
 [![CI](https://github.com/codzal/bat2sh/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/codzal/bat2sh/actions/workflows/ci.yml) [![CodeQL](https://github.com/codzal/bat2sh/actions/workflows/codeql.yml/badge.svg)](https://github.com/codzal/bat2sh/security/code-scanning) ![python](https://img.shields.io/badge/python-3.6%2B-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![status](https://img.shields.io/badge/status-beta-orange)
@@ -53,56 +57,25 @@ python3 frontend.py
 
 ---
 
-## Возможности
+## Возможности (5 китов)
 
-* **Структура** — пакет `bat2sh/` (`shell` — раскрытие переменных,
-  `parser`, `translator`, карта `commands`, `cli`) и тонкий Tkinter-
-  фронтенд `frontend.py`.
-
-* **Переменные** — `set`, `set /a`, `set /p`, `%VAR%`, отложенное `!VAR!`,
-  подстроки `%VAR:~0,5%` (включая отрицательные `%~-5` со сдвигом к началу
-  строки) и замена `%VAR:find=rep%`, аргументы `%1`…`%9`, `%*`, `%~dp0` и
-  другие модификаторы `%~`, специальная переменная `errorlevel`.
-* **Управление порядком выполнения** — `if`, `if not`, `if /i`,
-  `if exist`, `if defined`, `if errorlevel`, строковые и числовые сравнения
-  (`equ`/`neq`/`gtr`/`geq`/`lss`/`leq`), ветки `else`, `for`, `for /l`,
-  `for /r`, `for /f` (с `tokens=`, `delims=`, `skip=` и источниками
-  «строка/файл»), **вложенные** блоки `for` и `if`, `goto` (в том числе
-  выход из циклов) и подпрограммы `call` с собственным стеком аргументов.
-* **Перенаправление и операторы** — `>`, `>>`, `<`, конвейеры `|` и
-  разделители `&`, `&&`, `||`. Устройство Windows `nul` превращается в
-  `/dev/null`. Литеральные сравнения вроде `>=` / `<=` внутри текста
-  сохраняются.
-* **Частые команды** — `echo`, `rem`/`::`, `@`, `cd`, `md`/`mkdir`,
-  `rd`/`rmdir` (включая `/s`), `del`/`erase` (включая `/s`), `copy`,
-  `move`, `ren`, `type`, `cls`, `pause`, `exit`, `title`, `color`,
-  `setlocal`/`endlocal`, `pushd`/`popd`, `shift`, `start`, `dir`, `find`,
-  `findstr`, `path`, `choice`, `cmd /c` и многие стандартные команды
-  Windows, отображённые на POSIX-аналоги (`tasklist`→`ps`, `xcopy`→`cp -r`,
-  `ping`→`ping`, `ipconfig`→`ip`, `setx`→`export`, `timeout`→`sleep`, …).
-* **Преобразование путей** — `C:\dir\file` становится `/mnt/c/dir/file`,
-  обратные слэши заменяются на прямые.
-* **Аудит и отчёты** — `--analyze` находит обращения к реестру, запуск
-  Windows-бинарников (с подсказками wine/аналогов) и управление службами;
-  `--report out.md|.html` пишет отчёт миграции с покрытием по файлам.
-* **Цель PowerShell (бета)** — `--target=ps1` генерирует PowerShell для
-  базовых конструкций.
-* **shellcheck** — подсказки автоматически при `-c`, если утилита установлена.
-* **Интеграция с редактором** — `--install-vscode-task [DIR]` создаёт задачу
-  конвертации одной клавишей для VS Code / VSCodium.
-* **Runtime-слой** — `--runtime-layer` добавляет `check_errorlevel()` и
-  симлинки `/tmp/bat2sh_drives/<X>`; `--strict-bash` вставляет
-  `set -euo pipefail`; `-x` делает .sh исполняемым.
-* **Свои правила команд** — в `~/.config/bat2sh/config.toml`:
-  `[commands] my_tool = "mytool-linux {args}"`.
-* **Надёжный ввод** — файлы UTF-8 (с BOM и без) и UTF-16 декодируются
-  автоматически.
-* **Диагностика как в cmd.exe** — неизвестные команды печатают
-  `'x' is not recognized as an internal or external command…`, отсутствующие
-  метки сообщают `The system cannot find the batch label specified - X`
-  (`goto` останавливает скрипт, `call` продолжает), а при запуске без
-  терминала (например, из Dolphin) ошибки показываются диалоговыми окнами
-  вместо stderr.
+1. **Точное ядро трансляции** — переменные (отложенное раскрытие, подстроки,
+   замена без учёта регистра), весь поток управления включая `for /r` и
+   «честный» `for /f`, подпрограммы как bash-функции, диагностика в стиле
+   cmd.exe и настоящие коды возврата.
+2. **Сначала аудит — потом доверие** — `--analyze` находит обращения к
+   реестру, Windows-бинарники (подсказки wine/аналогов) и управление
+   службами; `--report` пишет отчёт миграции (HTML/Markdown) с покрытием
+   по каждому файлу.
+3. **Безопасный запуск** — `-r` выполнить сразу, `--diff` просмотр бок о бок,
+   `-c` с автоматическими подсказками shellcheck, `--strict-bash`,
+   `--runtime-layer`, опциональный `-x`, свои правила команд через TOML-конфиг.
+4. **Две цели, любые пути** — по умолчанию bash, бета-PowerShell через
+   `--target=ps1`; диски как WSL, Wine или корень (`--path-style`);
+   Windows-переменные окружения отображаются на XDG.
+5. **Удобные инструменты** — Tkinter GUI (две панели с синхронным скроллом и
+   подсветкой, пресеты платформ, русский интерфейс), установка задачи для
+   VS Code, snapshot-тесты и CI.
 
 ---
 

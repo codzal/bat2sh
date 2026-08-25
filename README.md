@@ -136,6 +136,9 @@ output directory, or preview-only), a *syntax-check only* mode, a live preview
 of the generated script, copy-to-clipboard, *Save As…*, an encoding selector,
 and *no-clobber* / *quiet* toggles. A menu bar (File / Edit / Run / Help) and
 keyboard shortcuts (`Ctrl+O`, `Ctrl+S`, `Ctrl+C`, `F5`) are provided.
+The UI language can be switched in the **Language** menu - English is
+built in, further languages ship as editable `languages/<code>.txt`
+packs (e.g. `languages/ru.txt`).
 
 ---
 

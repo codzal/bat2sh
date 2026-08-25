@@ -61,7 +61,7 @@ STRINGS = {
         'quit': 'Quit', 'edit': 'Edit', 'copy': 'Copy Script',
         'run': 'Run', 'convert': 'Convert', 'help': 'Help',
         'about': 'About',
-        'lang_menu': 'Language', 'lang_other': 'Русский',
+        'lang_menu': 'Language',
         'input': 'Input .bat / .cmd file or folder:',
         'browse_file': 'Browse File…', 'browse_dir': 'Browse Folder…',
         'options': 'Options', 'output': 'Output:',
@@ -73,28 +73,36 @@ STRINGS = {
         'noclobber': "Don't overwrite existing (-C)",
         'quiet': 'Quiet (-q)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
         'ready': 'Ready.', 'preview': 'Generated shell script',
-    },
-    'ru': {
-        'file': 'Файл', 'open_file': 'Открыть файл…',
-        'open_dir': 'Открыть папку…', 'save_as': 'Сохранить скрипт как…',
-        'quit': 'Выход', 'edit': 'Правка', 'copy': 'Копировать скрипт',
-        'run': 'Запуск', 'convert': 'Конвертировать', 'help': 'Справка',
-        'about': 'О программе',
-        'lang_menu': 'Язык / Language', 'lang_other': 'English',
-        'input': 'Входной .bat/.cmd файл или папка:',
-        'browse_file': 'Выбрать файл…', 'browse_dir': 'Выбрать папку…',
-        'options': 'Параметры', 'output': 'Вывод:',
-        'out_inplace': 'Рядом с входным (имя.sh)',
-        'out_file': 'Указать файл:', 'out_outdir': 'Папка вывода:',
-        'out_stdout': 'Только просмотр (не сохранять)',
-        'encoding': 'Кодировка:', 'chk': 'Только проверка синтаксиса (-c)',
-        'clean': 'Чистый вывод (-n)',
-        'noclobber': 'Не перезаписывать существующие (-C)',
-        'quiet': 'Тихий режим (-q)', 'copy_btn': 'Копировать',
-        'save_btn': 'Сохранить как…', 'ready': 'Готово.',
-        'preview': 'Готовый shell-скрипт',
-    },
+    }
 }
+
+LANG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'languages')
+
+
+def _load_langs():
+    """Built-in English plus every languages/<code>.txt pack found."""
+    packs = {'en': STRINGS['en']}
+    try:
+        files = sorted(os.listdir(LANG_DIR))
+    except OSError:
+        return packs
+    for fn in files:
+        if not fn.endswith('.txt'):
+            continue
+        code = fn[:-4]
+        d = {}
+        for line in open(os.path.join(LANG_DIR, fn), encoding='utf-8'):
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            k, v = line.split('=', 1)
+            d[k.strip()] = v
+        if d:
+            packs[code] = d
+    return packs
+
+
+LANGS = _load_langs()
 
 
 class Bat2ShGUI(tk.Tk):
@@ -122,7 +130,8 @@ class Bat2ShGUI(tk.Tk):
         self._apply_lang()
 
     def _t(self, key):
-        return STRINGS[self.lang][key]
+        return LANGS.get(self.lang, STRINGS['en']).get(
+            key, STRINGS['en'].get(key, key))
 
     def _apply_lang(self):
         t = self._t
@@ -148,7 +157,7 @@ class Bat2ShGUI(tk.Tk):
         self.config(menu=self._build_menubar())
 
     def _set_lang(self, lang):
-        self.lang = 'ru' if lang == 'en' else 'en'
+        self.lang = lang
         self._apply_lang()
 
     # ui construction
@@ -175,8 +184,11 @@ class Bat2ShGUI(tk.Tk):
                             command=self._convert)
         menubar.add_cascade(label=t('run'), menu=runmenu)
         langmenu = tk.Menu(menubar, tearoff=0)
-        langmenu.add_command(label=t('lang_other'),
-                             command=lambda: self._set_lang(self.lang))
+        for code, pack in sorted(LANGS.items()):
+            label = pack.get('name', code.capitalize())
+            langmenu.add_command(
+                label=('• %s' % label if code == self.lang else label),
+                command=lambda c=code: self._set_lang(c))
         menubar.add_cascade(label=t('lang_menu'), menu=langmenu)
         helpmenu = tk.Menu(menubar, tearoff=0)
         helpmenu.add_command(label=t('about'), command=self._about)

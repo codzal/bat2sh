@@ -2,6 +2,17 @@
 
 [English](README.md) | **Русский**
 
+[![CI](https://github.com/codzal/bat2sh/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/codzal/bat2sh/actions/workflows/ci.yml) [![CodeQL](https://github.com/codzal/bat2sh/actions/workflows/codeql.yml/badge.svg)](https://github.com/codzal/bat2sh/security/code-scanning) ![python](https://img.shields.io/badge/python-3.6%2B-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![status](https://img.shields.io/badge/status-beta-orange)
+
+## Содержание
+
+[Быстрый старт](#быстрый-старт) · [Возможности](#возможности) ·
+[Справочник CLI](#использование-из-командной-строки) ·
+[GUI](#графический-интерфейс) · [Примеры](#примеры) ·
+[Как это работает](#как-это-работает) · [Ограничения](#ограничения) ·
+[Безопасность](SECURITY.md) ·
+[Вики (RU)](https://github.com/codzal/bat2sh/wiki)
+
 `bat2sh` переводит сценарии Windows batch (`.bat` / `.cmd`) в сценарии
 POSIX `bash`. Это максимально точный блочный транслятор, покрывающий
 конструкции, которые используются в большинстве реальных bat-файлов, так

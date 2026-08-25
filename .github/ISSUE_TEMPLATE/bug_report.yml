@@ -1,0 +1,32 @@
+name: Bug report
+description: Conversion produces wrong bash / crashes
+labels: [bug]
+body:
+  - type: textarea
+    id: bat
+    attributes:
+      label: Minimal .bat snippet
+      placeholder: |
+        @echo off
+        echo hello %USERNAME%
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected bash output
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output (or error)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: bat2sh version
+      placeholder: python3 -m bat2sh -v
+    validations:
+      required: true

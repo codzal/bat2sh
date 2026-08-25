@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run test suite before publishing
+        run: |
+          python -m compileall -q bat2sh frontend.py
+          bash tests/snapshot.sh
+
+      - name: Build distribution archive
+        id: build
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          DIR="bat2sh-$VER"
+          mkdir "$DIR"
+          cp -r bat2sh examples README.md README_RU.md LICENSE frontend.py "$DIR/"
+          find "$DIR" -name '__pycache__' -type d -exec rm -rf {} +
+          FILE="bat2sh-$VER.zip"
+          zip -qr "$FILE" "$DIR"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog section for this version
+        id: notes
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            $0 ~ "^## \\["ver"\\]" {flag=1; next}
+            /^## \[/ && flag {exit}
+            flag' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Release $GITHUB_REF_NAME" > notes.md; fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-ghrelease@v2
+        with:
+          body_path: notes.md
+          files: ${{ steps.build.outputs.file }}

@@ -10,40 +10,10 @@ from functools import lru_cache
 
 from . import __version__
 from .audit import analyze, migration_report, summarize
+from .config import load_rules
 from . import shell
 from .ps1 import convert as ps1_convert
 from .translator import Translator
-
-
-@lru_cache(maxsize=1)
-def load_rules(path=os.path.expanduser(
-        '~/.config/bat2sh/config.toml')):
-    """Custom command replacements: [commands] win = linux [template]."""
-    rules = {}
-    try:
-        with open(path, 'rb') as f:
-            data = tomllib.load(f)
-        rules.update(data.get('commands', {}))
-    except FileNotFoundError:
-        pass
-    except Exception:
-        try:
-            for line in open(path.replace('.toml', '.conf'),
-                             encoding='utf-8'):
-                line = line.strip()
-                if line and '=' in line and not line.startswith('#'):
-                    k, v = line.split('=', 1)
-                    rules[k.strip().lower()] = v.strip()
-        except OSError:
-            pass
-    return rules
-
-
-import sys as _sys
-if _sys.version_info >= (3, 11):
-    import tomllib
-else:  # minimal shim so the toml branch never runs on old interpreters
-    tomllib = None
 
 
 def decode_text(raw, encoding=None):
@@ -161,7 +131,8 @@ def shell_hints(text, limit=8):
         return []
     import subprocess as sp
     r = sp.run(['shellcheck', '-f', 'gcc', '-x', '-s', 'bash', '-S', 'warning',
-                _write_tmp(text)], capture_output=True, text=True)
+                _write_tmp(text)], stdout=sp.PIPE, stderr=sp.PIPE,
+                   universal_newlines=True)
     keep = [ln for ln in r.stdout.splitlines()
             if not any(c in ln for c in ('SC2317', 'SC2152', 'SC2320', 'SC1097', 'SC2154'))]
     if not keep:
@@ -198,7 +169,8 @@ def install_vscode_task(directory='.'):
 def syntax_check(text):
     """`bash -n` the converted text; return (ok, error_output)."""
     r = subprocess.run(['bash', '-n', _write_tmp(text)],
-                       capture_output=True, text=True)
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       universal_newlines=True)
     return r.returncode == 0, r.stderr
 
 

@@ -4,15 +4,64 @@ import shlex
 
 from .commands import WIN_COMMAND_MAP
 from .parser import Parser
+from .config import load_rules
 from .shell import (_unquote, dos_slashes, expand_vars, fix_redir,
                     split_args, split_redir, split_top_ops, unescape_caret,
                     winpath)
+# JSON-backed registry emulation for `reg add/query/delete`
+REG_FUNCS = """\
+REG_FILE="${BAT2SH_REG:-$HOME/.config/bat2sh/registry.json}"
+reg_add() { python3 -c '
+import json,sys,os
+p,k,n,v=sys.argv[1:5]
+d=json.load(open(p)) if os.path.exists(p) else {}
+d.setdefault(k,{})[n]=v
+os.makedirs(os.path.dirname(p),exist_ok=True)
+json.dump(d,open(p,"w"),indent=1)
+' "$REG_FILE" "$1" "$2" "$3"; }
+reg_query() { python3 -c '
+import json,sys,os
+d=json.load(open(sys.argv[1])) if os.path.exists(sys.argv[1]) else {}
+BS=chr(92)
+k=sys.argv[2].replace(BS,"/").lower()
+n=sys.argv[3]
+if "currentversion" in k:
+    osr={}
+    fp="/etc/os-release"
+    if os.path.exists(fp):
+        for ln in open(fp):
+            if "=" in ln:
+                a,b=ln.rstrip().split("=",1)
+                osr[a.strip()]=b.strip(chr(34))
+    virt={"ProductName":osr.get("PRETTY_NAME","Linux"),
+          "CurrentVersion":"linux","SystemRoot":"/",
+          "ComSpec":"/bin/bash"}
+    v=virt.get(n)
+    if v:
+        print(v)
+        sys.exit(0)
+v=d.get(sys.argv[2],{}).get(n)
+print(v if v is not None else "The system cannot find the specified registry key or value.")
+sys.exit(0 if v is not None else 1)
+' "$REG_FILE" "$1" "$2"; }
+reg_del() { python3 -c '
+import json,sys,os
+p=sys.argv[1]
+d=json.load(open(p)) if os.path.exists(p) else {}
+d.get(sys.argv[2],{}).pop(sys.argv[3],None)
+json.dump(d,open(p,"w"),indent=1)
+' "$REG_FILE" "$1" "$2" "$3"; }
+"""
+
 
 class Translator:
     def __init__(self):
         self.label_map = {}
         self.func_names = {}
         self._need_ci = False
+        self._need_reg = False
+        self.stats = {'stmts': 0, 'fallback': 0}
+        self._need_reg = False
 
         def _sub_nul(a):
             return 'cat ' + re.sub(r'\bnul\b', '/dev/null', expand_vars(a))
@@ -77,6 +126,14 @@ class Translator:
                         'specified - %s" >&2; PC=-1; }' % tgt)
             return 'PC=%d; return' % t
 
+        if lcmd == 'reg':
+            return self.cmd_reg(args)
+
+        if lcmd == 'reg':
+            return self.cmd_reg(args)
+        if lcmd == 'sc':
+            return self.cmd_sc(args)
+
         h = self._cmd.get(lcmd)
         if h is not None:
             return h(args)
@@ -84,7 +141,66 @@ class Translator:
         if handler is not None:
             return handler(args)
 
+        rule = (self._rules if self._rules is not None
+                else load_rules()).get(lcmd)
+        if rule:
+            tmpl = expand_vars(rule)
+            return (tmpl.replace('{args}', expand_vars(args))
+                    if '{args}' in tmpl
+                    else tmpl + ' ' + expand_vars(args))
+        self.stats['fallback'] += 1
         return expand_vars(seg)
+
+    def cmd_reg(self, args):
+        """reg add/query/delete -> JSON-backed registry emulation."""
+        self._need_reg = True
+        t = split_args(expand_vars(args.strip()))
+        if not t:
+            return ':  # reg'
+        op = t[0].lower()
+        key = '"%s"' % (t[1].replace('\\', '/') if len(t) > 1 else '')
+        name, val = '(Default)', ''
+        rest, i = t[2:], 0
+        while i < len(rest):
+            k = rest[i].lower()
+            if k == '/v' and i + 1 < len(rest):
+                name = rest[i + 1]; i += 2
+            elif k == '/ve':
+                name = '(Default)'; i += 1
+            elif k == '/d' and i + 1 < len(rest):
+                val = rest[i + 1]; i += 2
+            else:
+                i += 1
+        if op.startswith('add'):
+            return 'reg_add %s "%s" "%s"' % (key, name, val)
+        if op.startswith('query'):
+            return 'reg_query %s "%s"' % (key, name)
+        if op.startswith('delete'):
+            return 'reg_del %s "%s"' % (key, name)
+        return ':  # reg %s' % op
+
+    def cmd_sc(self, args):
+        t = split_args(expand_vars(args.strip()))
+        if len(t) < 2:
+            return ':  # sc'
+        svc = t[1].lower()
+        sub = t[0].lower()
+        if sub == 'config':
+            mm = re.search(r'start=\s*(\w+)', ' '.join(t[2:]), re.I)
+            act = {'auto': 'enable', 'delayed-auto': 'enable',
+                   'demand': 'disable'}.get((mm.group(1) if mm else '').lower())
+            return ('sudo systemctl %s %s' % (act, svc)) if act \
+                else ':  # sc config %s' % svc
+        m = {'start': 'systemctl start %s', 'stop': 'systemctl stop %s',
+             'query': 'systemctl status %s'}.get(sub)
+        return ('sudo ' + m % svc) if m else ':  # sc %s' % sub
+
+    def cmd_color(self, args):
+        fg = {'0': '30', '1': '34', '2': '32', '3': '36', '4': '31',
+              '5': '35', '6': '33', '7': '37', '8': '90', '9': '94',
+              'a': '92', 'b': '96', 'c': '91', 'd': '95', 'e': '93',
+              'f': '97'}.get(args.strip().lower()[-1:], '0')
+        return "printf '\033[%sm' \"\"" % fg
 
     def cmd_cmd(self, args):
         m = re.match(r'/[ck]\s+"?(.*?)"?\s*$', args, re.IGNORECASE)
@@ -244,14 +360,24 @@ class Translator:
         a = expand_vars(args).strip()
         if a == '':
             return ':'
-        a = re.sub(r'/[a-z]+\b\s*', '', a, flags=re.IGNORECASE)
-        m = re.match(r'"([^"]*)"\s*(.*)$', a)
+        wait = bool(re.search(r'/wait\b', a, re.I))
+        rest = re.sub(r'/[a-z]+\b\s*', '', a,
+                      flags=re.IGNORECASE).strip()
+        m = re.match(r'"([^"]*)"\s*(.*)$', rest)
         if m:
             rest = m.group(2).strip()
-            if not rest:
-                return ':  # start: empty title only'
-            return 'nohup %s >/dev/null 2>&1 &' % rest
-        return 'nohup %s >/dev/null 2>&1 &' % a
+        if not rest:
+            return ':  # start: empty title only'
+        low = rest.lower()
+        if low.startswith(('http://', 'https://', 'www.')) or \
+                rest.endswith('.url'):
+            core = 'xdg-open %s' % (rest if rest.startswith('"')
+                                    else '"%s"' % rest)
+        else:
+            core = rest
+        if wait:
+            return core
+        return 'nohup %s >/dev/null 2>&1 &' % core
 
     def cmd_dir(self, args):
         a = args.strip()
@@ -316,6 +442,7 @@ class Translator:
     # simple line
     def translate_simple(self, text, nxt=0):
         parts = split_top_ops(text)
+        self.stats['stmts'] += len(parts)
         out = []
         for seg, op in parts:
             line = self.translate_segment(seg, nxt)
@@ -613,7 +740,10 @@ class Translator:
             return True
         return False
 
-    def convert(self, text, clean=False):
+    def convert(self, text, clean=False, shebang=None, strict=False,
+                local_scope=False):
+        self.strict = strict
+        self.local_scope = local_scope
         text = self.join_continuations(text)
         nodes = Parser(text).parse_program()
         indexed = list(enumerate(nodes))
@@ -663,6 +793,11 @@ class Translator:
                     continue
                 body.extend(self.emit_node(n, j, j + 1))
             body = ['return' if ln == eof_stmt else ln for ln in body]
+            if self.local_scope:
+                body = [re.sub(r'^([A-Za-z_][\w.]*)=(".*")$',
+                               r'local \1=\2', b)
+                        if re.match(r'^[A-Za-z_][\w.]*=".*"$', b)
+                        else b for b in body]
             func_defs.append('# subroutine: %s\n%s() {\n%s\n}'
                              % (lname.title(), self.func_names[lname],
                                 '\n'.join('    ' + l for l in body)))
@@ -700,7 +835,7 @@ command_not_found_handle() {
     printf "'%s' is not recognized as an internal or external command,\\n" "$1" >&2
     echo "operable program or batch file." >&2
     ERRORLEVEL=9009
-    return 9009
+    return 1
 }
 
 # choice: emulate the batch CHOICE command
@@ -715,8 +850,13 @@ choice() {
         esac
         shift
     done
-    read -n1 -r -p "$prompt" _ch || _ch=""
+    if [ -n "$t" ]; then
+        read -n1 -r -t "$t" -p "$prompt" _ch || _ch=""
+    else
+        read -n1 -r -p "$prompt" _ch || _ch=""
+    fi
     echo
+    [ -z "$_ch" ] && [ -n "$default" ] && _ch="$default"
     if [ -t 0 ]; then
         IFS= read -r _rest || true
     fi
@@ -725,7 +865,7 @@ choice() {
         c="${opts:i-1:1}"
         if [ "$_ch" = "$c" ]; then ERRORLEVEL=$i; return; fi
     done
-    ERRORLEVEL=0
+    ERRORLEVEL=255
 }
 
 dispatch() {
@@ -745,6 +885,8 @@ run
 exit $ERRORLEVEL
 '''
         extras = func_defs
+        if self._need_reg:
+            extras = [REG_FUNCS] + extras
         if self._need_ci:
             ci_helper = (
                 '# case-insensitive replace (batch semantics):'
@@ -757,6 +899,20 @@ exit $ERRORLEVEL
                 '}')
             extras = [ci_helper] + extras
         script = preamble + '\n'.join(arms) + epilogue
+        if shebang:
+            lines = script.split('\n')
+            lines[0] = shebang if shebang.startswith('#!') \
+                else '#!' + shebang
+            script = '\n'.join(lines)
+        if self.strict:
+            lines = script.split('\n')
+            lines.insert(1, 'set -euo pipefail')
+            script = '\n'.join(lines)
+        if shebang:
+            lines = script.split('\n')
+            lines[0] = shebang if shebang.startswith('#!') \
+                else '#!' + shebang
+            script = '\n'.join(lines)
         if extras:
             marker = 'dispatch() {\n    case $PC in'
             head, tail = preamble.split(marker)

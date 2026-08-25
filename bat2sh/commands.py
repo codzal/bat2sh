@@ -77,6 +77,106 @@ def cmd_net(args):
     return ':  # net %s is not emulated' % sub
 
 
+
+
+def cmd_attrib(args):
+    """attrib +r/-r/+x/+h -> chmod / dot-file renames."""
+    a = expand_vars(args.strip())
+    plus = set(re.findall(r'\+([hrsx])', a, re.I))
+    minus = set(re.findall(r'-([hrsx])', a, re.I))
+    paths = split_args(re.sub(r'[+-][hrsxa]\b', '', a,
+                              flags=re.IGNORECASE)) or ['*']
+    out = []
+    for raw in paths:
+        p = winpath(raw)
+        if 'r' in plus:
+            out.append('chmod -w -- "%s"' % p)
+        if 'x' in plus or 's' in plus:
+            out.append('chmod +x -- "%s"' % p)
+        if 'r' in minus:
+            out.append('chmod +w -- "%s"' % p)
+        if 'x' in minus or 's' in minus:
+            out.append('chmod -x -- "%s"' % p)
+        if 'h' in plus:
+            out.append('f="%s"; case "$f" in */*) d="${f%%/*}"; b="${f##*/}";;'
+                       ' *) d="." b="$f";; esac; '
+                       'mv -n -- "$f" "$d/.${b#.}"' % p)
+        if 'h' in minus:
+            out.append('f="%s"; b="${f##*/}"; d="${f%%"$b"}"; '
+                       '[ "${b#.}" != "$b" ] && mv -n -- "$f" "$d/${b#.}"'
+                       % p)
+    if not out:
+        return 'ls -ld -- ' + ' '.join('"%s"' % winpath(x) for x in paths)
+    return ' && '.join(out)
+
+
+def cmd_icacls(args):
+    """Basic ACL verbs -> chmod."""
+    toks = split_args(expand_vars(args.strip()))
+    if not toks:
+        return ':  # icacls'
+    path = winpath(toks[0])
+    out = []
+    for t in toks[1:]:
+        tl = t.lower()
+        if tl == '/reset':
+            out.append('chmod -R u+rwX -- "%s"' % path)
+        elif tl.startswith('/grant'):
+            spec = t.split(':', 1)[1] if ':' in t else ''
+            perms = (spec.split('(')[-1].rstrip(')').upper()
+                     if '(' in spec else 'F')
+            bits = {'R': 'r', 'W': 'w', 'X': 'x', 'F': 'rwx', 'M': 'rwx'}
+            mode = ''.join(sorted({bits[c] for c in perms if c in bits}))
+            if mode:
+                out.append('chmod u+%s -- "%s"' % (mode, path))
+        elif tl.startswith('/deny'):
+            out.append('chmod u-w -- "%s"' % path)
+    if not out:
+        out = ['ls -ld -- "%s"' % path]
+    return ' && '.join(out)
+
+
+def cmd_assoc(args):
+    """File associations via xdg-mime."""
+    t = split_args(expand_vars(args.strip()))
+    if not t:
+        return ':  # assoc'
+    cur = t[0]
+    if '=' in cur:
+        ext, val = cur.split('=', 1)
+        ext = ext if ext.startswith('.') else '.' + ext
+        target = val if '/' in val or val.endswith('.desktop') \
+            else val + '.desktop'
+        return 'xdg-mime default "%s" "%s"' % (target, ext)
+    ext = cur if cur.startswith('.') else '.' + cur
+    return ('xdg-mime query default '
+            '"$(xdg-mime query filetype *%s 2>/dev/null | head -n1)"' % ext)
+
+
+def cmd_ftype(args):
+    e = expand_vars(args.strip())
+    if not e:
+        return ('grep -h "^MimeType=" ~/.local/share/applications/*.desktop '
+                '2>/dev/null || true')
+    return ':  # ftype %s (handlers live in *.desktop files)' % e
+
+
+def cmd_subst(args):
+    """subst X: [path] -> symlink under ~/.local/share/bat2sh/drives."""
+    t = split_args(expand_vars(args.strip()))
+    if not t:
+        return ':  # subst'
+    drv = t[0].rstrip(':').lower()
+    link = '$HOME/.local/share/bat2sh/drives/%s' % drv
+    if len(t) > 1 and t[1].lower() != '/d':
+        tgt = winpath(t[1])
+        return ('mkdir -p "$HOME/.local/share/bat2sh/drives" && '
+                'ln -sfn "%s" "%s"' % (tgt, link))
+    if any(x.lower() == '/d' for x in t[1:]):
+        return 'rm -f "%s"' % link
+    return 'readlink "%s" || true' % link
+
+
 WIN_COMMAND_MAP = {
     'setlocal': lambda a: ':  # setlocal (no-op; delayed expansion always on)',
     'endlocal': lambda a: ':  # endlocal (no-op)',
@@ -91,14 +191,29 @@ WIN_COMMAND_MAP = {
     'more': lambda a: 'less ' + expand_vars(a),
     'tree': lambda a: 'tree ' + expand_vars(a),
     'ping': lambda a: 'ping ' + expand_vars(a),
-    'netstat': lambda a: 'netstat ' + expand_vars(a),
-    'nslookup': lambda a: 'nslookup ' + expand_vars(a),
+    'netstat': lambda a: (
+        'ss -tulpn' if re.search(r'-a|-n', a, re.I)
+        else ('lsof -i -P -n | grep LISTEN'
+              if re.search(r'\bo\b', a, re.I) else 'ss -tu')),
+    'route': lambda a: 'ip route' if 'print' in a.lower()
+             else 'ip route ' + expand_vars(a),
+    'nslookup': lambda a: 'dig +short ' + expand_vars(
+        re.sub(r'nslookup\s*', '', a, flags=re.I)),
+    'netsh': lambda a: (
+        'nmcli connection show'
+        if re.search(r'wlan.*profiles|show\s+profiles', a, re.I)
+        else ':  # netsh %s' % expand_vars(a)),
     'tracert': lambda a: 'traceroute ' + expand_vars(a),
     'pathping': lambda a: 'ping ' + expand_vars(a),
     'systeminfo': lambda a: 'uname -a',
     'tasklist': lambda a: 'ps aux',
     'taskkill': cmd_taskkill,
-    'attrib': lambda a: 'ls -l ' + expand_vars(a),
+    'attrib': cmd_attrib,
+    'icacls': cmd_icacls,
+    'cacls': cmd_icacls,
+    'assoc': cmd_assoc,
+    'ftype': cmd_ftype,
+    'subst': cmd_subst,
     'fc': lambda a: 'diff ' + expand_vars(a),
     'comp': lambda a: 'cmp ' + expand_vars(a),
     'xcopy': cmd_xcopy,
@@ -110,8 +225,6 @@ WIN_COMMAND_MAP = {
     'mode': lambda a: ':  # mode',
     'label': lambda a: ':  # label',
     'prompt': lambda a: ':  # prompt',
-    'assoc': lambda a: ':  # assoc',
-    'ftype': lambda a: ':  # ftype',
     'sc': lambda a: 'systemctl ' + expand_vars(a),
     'where': lambda a: 'which ' + expand_vars(a),
     'mklink': cmd_mklink,
@@ -120,13 +233,9 @@ WIN_COMMAND_MAP = {
     'logoff': lambda a: 'exit',
     'replace': lambda a: 'cp ' + expand_vars(a),
     'driverquery': lambda a: 'lsmod',
-    'cacls': lambda a: ':  # cacls (use chmod)',
-    'icacls': lambda a: ':  # icacls (use chmod)',
-    'subst': lambda a: ':  # subst (no direct equivalent)',
     'doskey': lambda a: ':  # doskey (define a shell alias instead)',
     'net': cmd_net,
     'net1': cmd_net,
-    'reg': lambda a: ':  # reg (Windows registry) is not emulated',
     'schtasks': lambda a: ':  # schtasks (use cron) is not emulated',
     'gpupdate': lambda a: ':  # gpupdate is not emulated',
     'gpresult': lambda a: ':  # gpresult is not emulated',
@@ -140,11 +249,9 @@ WIN_COMMAND_MAP = {
     'bitsadmin': lambda a: ':  # bitsadmin is not emulated',
     'powercfg': lambda a: ':  # powercfg is not emulated',
     'wmic': lambda a: ':  # wmic is not emulated',
-    'netsh': lambda a: ':  # netsh (use ip / networkctl)',
     'nbtstat': lambda a: ':  # nbtstat (use nmblookup)',
     'getmac': lambda a: 'ip -o link',
     'arp': lambda a: 'arp ' + expand_vars(a),
-    'route': lambda a: 'route ' + expand_vars(a),
     'telnet': lambda a: 'telnet ' + expand_vars(a),
     'ftp': lambda a: 'ftp ' + expand_vars(a),
     'tftp': lambda a: 'tftp ' + expand_vars(a),

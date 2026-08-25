@@ -1,0 +1,53 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Static checks
+        run: |
+          python -m compileall -q bat2sh frontend.py
+          pip install pyflakes && python -m pyflakes bat2sh/*.py frontend.py
+
+      - name: Convert all examples + bash -n
+        run: |
+          mkdir -p out
+          fail=0
+          for f in examples/*/*.bat; do
+            b=$(basename "${f%.bat}")
+            python3 -m bat2sh "$f" > "out/$b.sh" || fail=1
+            bash -n "out/$b.sh" || fail=1
+          done
+          exit $fail
+
+      - name: Runtime smoke (self-cleaning examples only)
+        run: |
+          for f in examples/basics/01_hello_world.bat examples/advanced/10_ini_parser.bat; do
+            d=$(dirname "$f"); b=$(basename "$f")
+            ( cd "$d" && PYTHONPATH="$GITHUB_WORKSPACE" \
+              timeout 10 python3 -m bat2sh -r "$b" > /dev/null ) || exit 1
+          done
+
+      - name: Snapshot tests
+        run: |
+          bash tests/snapshot.sh
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint repo helper scripts
+        run: |
+          shellcheck examples/generate_examples.sh examples/remove_generated.sh tests/snapshot.sh

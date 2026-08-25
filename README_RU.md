@@ -1,5 +1,7 @@
 # bat2sh — конвертер Windows Batch в Shell
 
+[English](README.md) | **Русский**
+
 `bat2sh` переводит сценарии Windows batch (`.bat` / `.cmd`) в сценарии
 POSIX `bash`. Это максимально точный блочный транслятор, покрывающий
 конструкции, которые используются в большинстве реальных bat-файлов, так
@@ -90,6 +92,9 @@ python3 -m bat2sh script.bat script.sh
 
 # читать из stdin
 cat script.bat | python3 -m bat2sh -
+
+# конвертировать из stdin и сразу выполнить (ничего не сохраняется)
+cat script.bat | python3 -m bat2sh
 
 # сконвертировать папку с .bat/.cmd разом
 python3 -m bat2sh examples/

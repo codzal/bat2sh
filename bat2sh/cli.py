@@ -71,6 +71,22 @@ def _write_tmp(text):
     return _CHECK_PATH
 
 
+_RUN_PATH = os.path.join(tempfile.gettempdir(), 'bat2sh_run_%d.sh' % os.getpid())
+atexit.register(lambda: os.path.exists(_RUN_PATH) and os.unlink(_RUN_PATH))
+
+
+def _run_script(text):
+    """Execute converted text with bash; stdio is inherited so the script
+    can interact with the terminal (pause, set /p, ...)."""
+    with open(_RUN_PATH, 'w') as f:
+        f.write(text)
+    try:
+        return subprocess.call(['bash', _RUN_PATH])
+    except OSError as e:
+        sys.stderr.write('cannot run: %s\n' % e)
+        return 127
+
+
 def syntax_check(text):
     """`bash -n` the converted text; return (ok, error_output)."""
     r = subprocess.run(['bash', '-n', _write_tmp(text)],
@@ -85,7 +101,10 @@ def _argparser():
     ap = argparse.ArgumentParser(
         prog='bat2sh',
         description='Convert Windows batch files to bash scripts.')
-    ap.add_argument('input', help='Input .bat/.cmd file, directory, or - for stdin')
+    ap.add_argument('input', nargs='?', default=None,
+                    help='Input .bat/.cmd file, directory, or - for stdin; '
+                         'with no argument a piped batch script is converted '
+                         'and executed immediately')
     ap.add_argument('output', nargs='?', help='Output .sh file (default: stdout)')
     ap.add_argument('-i', '--inplace', action='store_true',
                     help='Write <input>.sh next to the input file')
@@ -151,6 +170,21 @@ def _process_job(args, src, out):
 
 def main(argv=None):
     args = _argparser().parse_args(argv)
+
+    if args.input is None:
+        # no argument: piped batch is converted and executed immediately
+        if sys.stdin.isatty():
+            sys.stderr.write('no input given; pass a file/folder, or pipe '
+                             'a batch script: cat x.bat | python3 -m bat2sh\n')
+            return 1
+        text = sys.stdin.read()
+        try:
+            result = Translator().convert(text, clean=args.no_debug)
+        except Exception as e:  # noqa: BLE001
+            print('FAIL  <stdin>')
+            sys.stderr.write('conversion error: %s\n' % e)
+            return 1
+        return _run_script(result)
 
     jobs = _collect_jobs(args)
     if not jobs:

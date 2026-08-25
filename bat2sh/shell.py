@@ -148,7 +148,6 @@ _RX_REPL_DEL = re.compile(r'!([A-Za-z_][\w.]*):([^=!]*)=([^!]*)!')
 _RX_DEL = re.compile(r'!([A-Za-z_][\w.]*(?::~[^!]*)?)!')
 _RX_SUBSTR_INNER = re.compile(r'([A-Za-z_][\w.]*):~(-?\d+)(?:,(\d+))?')
 
-# %~dp0-style argument modifiers -> bash snippets
 _MOD_MAP = {
     'dp': '"$(dirname "$0")/"',
     'p': '"$(dirname "$0")"',

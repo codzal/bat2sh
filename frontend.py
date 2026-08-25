@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""bat2sh GUI - a Tkinter front-end for the batch-to-shell converter.
-
-Provides a friendly interface to convert Windows .bat/.cmd files (or whole
-folders) into bash scripts, with a live preview, syntax checking and the
-same options as the command-line tool.
-"""
 
 import os
 import subprocess

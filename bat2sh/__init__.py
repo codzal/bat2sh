@@ -1,5 +1,3 @@
-"""bat2sh - Windows batch (.bat/.cmd) to bash converter."""
-
 __version__ = '0.1'
 
 from .cli import decode_text, main

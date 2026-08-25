@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Converted from a Windows batch file by bat2sh.
 set -o pipefail
-shopt -s nocasematch   # emulate "if /i" case-insensitive compares
+shopt -s nocasematch
 
 CALL_STACK=()
 ARGS_STACK=()
@@ -17,7 +16,6 @@ command_not_found_handle() {
     return 1
 }
 
-# choice: emulate the batch CHOICE command
 choice() {
     local opts="" prompt="" default="" t=""
     while [ $# -gt 0 ]; do
@@ -49,11 +47,9 @@ choice() {
 
 dispatch() {
     case $PC in    0)
-        :  # echo off
         PC=1
         ;;
     1)
-        :  # setlocal
         PC=2
         ;;
     2)
@@ -77,7 +73,6 @@ dispatch() {
         PC=6
         ;;
     6)
-        :  # endlocal
         PC=7
         ;;
         *) PC=-1;;

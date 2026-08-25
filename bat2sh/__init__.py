@@ -1,4 +1,4 @@
-__version__ = '0.3'
+__version__ = '0.4'
 
 from .cli import decode_text, main, syntax_check
 from .commands import WIN_COMMAND_MAP

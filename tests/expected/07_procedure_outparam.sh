@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Converted from a Windows batch file by bat2sh.
 set -o pipefail
-shopt -s nocasematch   # emulate "if /i" case-insensitive compares
+shopt -s nocasematch
 
 CALL_STACK=()
 ARGS_STACK=()
@@ -17,7 +16,6 @@ command_not_found_handle() {
     return 1
 }
 
-# choice: emulate the batch CHOICE command
 choice() {
     local opts="" prompt="" default="" t=""
     while [ $# -gt 0 ]; do
@@ -59,7 +57,6 @@ ci_replace() {
 
 # subroutine: Touppercase
 sub_touppercase() {
-    :  # setlocal
     string="${ARGS[1]}"
     ERRORLEVEL=$?
     for a in A B C D E F G H I J K L M N O P Q R S T U V W X Y Z; do
@@ -67,7 +64,6 @@ sub_touppercase() {
         ERRORLEVEL=$?
     done
     ERRORLEVEL=$?
-    :  # endlocal
     printf -v "${ARGS[0]}" '%s' "${string}"
     ERRORLEVEL=$?
     return
@@ -76,11 +72,9 @@ sub_touppercase() {
 
 dispatch() {
     case $PC in    0)
-        :  # echo off
         PC=1
         ;;
     1)
-        :  # setlocal
         PC=2
         ;;
     2)
@@ -119,7 +113,6 @@ dispatch() {
         PC=9
         ;;
     9)
-        :  # setlocal
         PC=10
         ;;
     10)
@@ -136,7 +129,6 @@ dispatch() {
         PC=12
         ;;
     12)
-        :  # endlocal
         PC=13
         ;;
     13)

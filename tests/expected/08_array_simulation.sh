@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Converted from a Windows batch file by bat2sh.
 set -o pipefail
-shopt -s nocasematch   # emulate "if /i" case-insensitive compares
+shopt -s nocasematch
 
 CALL_STACK=()
 ARGS_STACK=()
@@ -17,7 +16,6 @@ command_not_found_handle() {
     return 1
 }
 
-# choice: emulate the batch CHOICE command
 choice() {
     local opts="" prompt="" default="" t=""
     while [ $# -gt 0 ]; do
@@ -50,13 +48,11 @@ choice() {
 
 # subroutine: Arraypush
 sub_arraypush() {
-    :  # setlocal
     array_name="${ARGS[0]}"
     ERRORLEVEL=$?
     value="${ARGS[1]}"
     ERRORLEVEL=$?
     # unhandled: arithmetic uses delayed/indirect expansion of a computed variable name: set /a "current_index=!%array_name%_count!"
-    :  # endlocal
     printf -v "${array_name}_${current_index}" '%s' "${value}"
     ERRORLEVEL=$?
     (( "${array_name}_count+=1" ))
@@ -67,7 +63,6 @@ sub_arraypush() {
 
 # subroutine: Printarray
 sub_printarray() {
-    :  # setlocal
     array_name="${ARGS[0]}"
     ERRORLEVEL=$?
     (( "max_index=${ARGS[1]} - 1" ))
@@ -77,18 +72,15 @@ sub_printarray() {
         ERRORLEVEL=$?
     done
     ERRORLEVEL=$?
-    :  # endlocal
     return
     ERRORLEVEL=$?
 }
 
 dispatch() {
     case $PC in    0)
-        :  # echo off
         PC=1
         ;;
     1)
-        :  # setlocal
         PC=2
         ;;
     2)
@@ -148,7 +140,6 @@ dispatch() {
         PC=12
         ;;
     12)
-        :  # setlocal
         PC=13
         ;;
     13)
@@ -166,7 +157,6 @@ dispatch() {
         PC=16
         ;;
     16)
-        :  # endlocal
         PC=17
         ;;
     17)
@@ -185,7 +175,6 @@ dispatch() {
         PC=20
         ;;
     20)
-        :  # setlocal
         PC=21
         ;;
     21)
@@ -207,7 +196,6 @@ dispatch() {
         PC=24
         ;;
     24)
-        :  # endlocal
         PC=25
         ;;
     25)

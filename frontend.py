@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import subprocess
 import sys
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox, scrolledtext
+
+try:                                   # stable drag & drop when available
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    _DND = True
+except Exception:
+    DND_FILES = '<<Drop>>'
+    TkinterDnD = None
+    _DND = False
 
 
 def _load_backend():
@@ -74,8 +84,31 @@ STRINGS = {
         'encoding': 'Encoding:', 'chk': 'Syntax-check only (-c)',
         'clean': 'Clean output (-n)',
         'noclobber': "Don't overwrite existing (-C)",
-        'quiet': 'Quiet (-q)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
+        'debug': 'Keep debug comments (--debug)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
         'ready': 'Ready.', 'preview': 'Generated shell script',
+        'target': 'Target:',
+        'preset_bash': 'Pure Bash', 'preset_wsl': 'WSL',
+        'preset_wine': 'Wine-friendly',
+        'strict': 'set -euo pipefail',
+        'beta': '[beta] translations other than English may be incomplete',
+        'choose_input': 'Please choose an input file or folder.',
+        'input_missing': 'Input not found: %s',
+        'no_bat': 'No .bat/.cmd files found in folder.',
+        'processed': 'Processed %d file(s).',
+        'wrote': 'Wrote %s', 'skipped': 'Skipped %s (exists).',
+        'syntax_ok': 'Syntax OK', 'syntax_fail': 'Syntax FAIL',
+        'preview_ready': 'Preview ready (not written to disk).',
+        'copied': 'Script copied to clipboard.',
+        'nothing_to_save': 'Nothing to save yet.',
+        'saved': 'Saved %s',
+        'write_err': 'Write error: %s', 'save_err': 'Save error: %s',
+        'conv_err': 'Conversion error: %s',
+        'dlg_open_file': 'Open Batch File',
+        'dlg_open_dir': 'Open Batch Folder',
+        'dlg_save_as': 'Save Shell Script As',
+        'dlg_outdir': 'Select Output Directory',
+        'ft_batch': 'Batch files', 'ft_shell': 'Shell script',
+        'ft_all': 'All files',
     }
 }
 
@@ -108,9 +141,15 @@ def _load_langs():
 LANGS = _load_langs()
 
 
-class Bat2ShGUI(tk.Tk):
+_BASE = TkinterDnD.Tk if _DND else tk.Tk
+
+
+class Bat2ShGUI(_BASE):
     def __init__(self):
         super().__init__()
+        if _DND:
+            self.drop_target_register(DND_FILES)
+            self.dnd_bind('<<Drop>>', self._on_drop)
         self.lang = 'en'
         self.title('bat2sh %s' % VERSION)
         self.geometry('900x680')
@@ -123,9 +162,13 @@ class Bat2ShGUI(tk.Tk):
         self.check_var = tk.BooleanVar(value=False)
         self.clean_var = tk.BooleanVar(value=False)
         self.noclobber_var = tk.BooleanVar(value=False)
-        self.quiet_var = tk.BooleanVar(value=False)
+        self.debug_var = tk.BooleanVar(value=False)
         self.encoding_var = tk.StringVar(value='auto')
-        self.preset_var = tk.StringVar(value='wsl')
+        self.preset_var = tk.StringVar(value='bash')
+
+        fixed = tkfont.nametofont('TkFixedFont')
+        fixed.configure(size=10)
+        self.fixed_font = fixed
 
         self._build_widgets()
         self._layout()
@@ -152,7 +195,7 @@ class Bat2ShGUI(tk.Tk):
         self.check_btn.configure(text=t('chk'))
         self.clean_btn.configure(text=t('clean'))
         self.noclobber_btn.configure(text=t('noclobber'))
-        self.quiet_btn.configure(text=t('quiet'))
+        self.debug_btn.configure(text=t('debug'))
         self.convert_btn.configure(text=t('convert'))
         self.copy_btn.configure(text=t('copy_btn'))
         self.save_btn.configure(text=t('save_btn'))
@@ -246,14 +289,17 @@ class Bat2ShGUI(tk.Tk):
                                       values=ENCODINGS, width=12,
                                       state='readonly')
 
-        self.preset_lbl = ttk.Label(self.opt_frame, text='Target:')
-        for val, lbl in (('bash', 'Pure Bash'), ('wsl', 'WSL'),
-                         ('wine', 'Wine-friendly')):
+        self.preset_lbl = ttk.Label(self.opt_frame,
+                                    text=self._t('target'))
+        for val in ('bash', 'wsl', 'wine'):
             rb = ttk.Radiobutton(self.opt_frame, value=val,
-                                 variable=self.preset_var, text=lbl)
+                                 variable=self.preset_var,
+                                 text=self._t('preset_' + val),
+                                 command=self._apply_preset)
             setattr(self, 'preset_' + val, rb)
+
         self.strict_btn = ttk.Checkbutton(
-            self.opt_frame, text='set -euo pipefail',
+            self.opt_frame, text=self._t('strict'),
             variable=tk.BooleanVar(value=False))
 
         self.check_btn = ttk.Checkbutton(
@@ -265,9 +311,9 @@ class Bat2ShGUI(tk.Tk):
         self.noclobber_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('noclobber'),
             variable=self.noclobber_var)
-        self.quiet_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('quiet'),
-            variable=self.quiet_var)
+        self.debug_btn = ttk.Checkbutton(
+            self.opt_frame, text=self._t('debug'),
+            variable=self.debug_var)
 
         self.convert_btn = ttk.Button(self, text=self._t('convert'),
                                       command=self._convert)
@@ -279,18 +325,20 @@ class Bat2ShGUI(tk.Tk):
                                         mode='determinate', maximum=100)
 
         self.status_lbl = ttk.Label(
-            self, text=self._t('ready') + '  [beta]', anchor='w')
+            self, text=self._t('ready') + '  ' + self._t('beta'),
+                                    anchor='w')
 
         self.preview_frame = ttk.LabelFrame(
             self, text=self._t('preview'))
-        pane = tk.PanedWindow(self.preview_frame, orient=tk.HORIZONTAL,
+        self.pane = tk.PanedWindow(self.preview_frame, orient=tk.HORIZONTAL,
                               sashrelief=tk.RAISED)
         self.orig = scrolledtext.ScrolledText(
-            pane, wrap=tk.NONE, font=('Courier New', 10), width=40)
+            self.pane, wrap=tk.NONE, font=self.fixed_font,
+                       width=40)
         self.preview = scrolledtext.ScrolledText(
-            pane, wrap=tk.NONE, font=('Courier New', 10))
-        pane.add(self.orig)
-        pane.add(self.preview)
+            self.pane, wrap=tk.NONE, font=self.fixed_font)
+        self.pane.add(self.orig, width=280)
+        self.pane.add(self.preview)
         self.orig.configure(state=tk.DISABLED)
         self._orig_yview = self.orig.yview
         self.orig['yscrollcommand'] = lambda f, t: (
@@ -357,7 +405,7 @@ class Bat2ShGUI(tk.Tk):
         self.check_btn.grid(row=4, column=0, columnspan=2, sticky='w', **pad)
         self.clean_btn.grid(row=4, column=2, columnspan=2, sticky='w', **pad)
         self.noclobber_btn.grid(row=5, column=0, columnspan=2, sticky='w', **pad)
-        self.quiet_btn.grid(row=5, column=2, columnspan=2, sticky='w', **pad)
+        self.debug_btn.grid(row=5, column=2, columnspan=2, sticky='w', **pad)
         self.preset_lbl.grid(row=6, column=0, sticky='w', padx=6, pady=2)
         self.preset_bash.grid(row=6, column=1, sticky='w', padx=4, pady=2)
         self.preset_wsl.grid(row=6, column=2, sticky='w', padx=4, pady=2)
@@ -375,10 +423,23 @@ class Bat2ShGUI(tk.Tk):
 
         self.preview_frame.grid(row=4, column=0, columnspan=4,
                                 sticky='nsew', **pad)
-        self.preview.pack(fill=tk.BOTH, expand=True)
+        # the two text panes are managed by the PanedWindow itself
+        self.pane.pack(fill=tk.BOTH, expand=True)
+        try:
+            self.pane.sashpos(0, 280)
+        except Exception:
+            pass
 
         self.columnconfigure(1, weight=1)
         self.rowconfigure(4, weight=1)
+
+    def _apply_preset(self):
+        style = {'bash': 'root', 'wsl': 'wsl', 'wine': 'wine'}[
+            self.preset_var.get()]
+        try:
+            bat2sh.shell.set_path_style(style)
+        except Exception:
+            pass
 
     def _bind_shortcuts(self):
         self.bind('<Control-o>', lambda e: self._browse_file())
@@ -426,8 +487,6 @@ class Bat2ShGUI(tk.Tk):
         self._highlight(self.orig, 'bat')
 
     def _status(self, msg, error=False):
-        if self.quiet_var.get() and not error:
-            return
         self.status_lbl.configure(
             text=msg, foreground=('#c0392b' if error else '#2c3e50'))
 
@@ -451,17 +510,33 @@ class Bat2ShGUI(tk.Tk):
         return syntax_check(sh)
 
     # browse actions
+    def _on_drop(self, event):
+        """Accept dropped .bat/.cmd files (tkinterdnd2)."""
+        raw = event.data
+        paths = re.findall(r'\{([^}]+)\}|([^{}\s]+)', raw)
+        paths = [a or b for a, b in paths]
+        batches = [p for p in paths
+                   if p.lower().endswith(('.bat', '.cmd'))]
+        if not batches:
+            self._status('Drop a .bat/.cmd file', error=True)
+            return
+        self.inp_var.set(batches[0])
+        self.out_mode.set('inplace')
+        self._sync_output_state()
+        self._convert()
+
     def _browse_file(self):
         path = filedialog.askopenfilename(
-            title='Open Batch File',
-            filetypes=[('Batch files', '*.bat *.cmd'), ('All files', '*.*')])
+            title=self._t('dlg_open_file'),
+            filetypes=[(self._t('ft_batch'), '*.bat *.cmd'),
+                       (self._t('ft_all'), '*.*')])
         if path:
             self.inp_var.set(path)
             self.out_mode.set('inplace')
             self._sync_output_state()
 
     def _browse_dir(self):
-        path = filedialog.askdirectory(title='Open Batch Folder')
+        path = filedialog.askdirectory(title=self._t('dlg_open_dir'))
         if path:
             self.inp_var.set(path)
             self.out_mode.set('inplace')
@@ -469,13 +544,14 @@ class Bat2ShGUI(tk.Tk):
 
     def _browse_out(self):
         path = filedialog.asksaveasfilename(
-            title='Save Shell Script As', defaultextension='.sh',
-            filetypes=[('Shell script', '*.sh'), ('All files', '*.*')])
+            title=self._t('dlg_save_as'), defaultextension='.sh',
+            filetypes=[(self._t('ft_shell'), '*.sh'),
+                       (self._t('ft_all'), '*.*')])
         if path:
             self.out_var.set(path)
 
     def _browse_outdir(self):
-        path = filedialog.askdirectory(title='Select Output Directory')
+        path = filedialog.askdirectory(title=self._t('dlg_outdir'))
         if path:
             self.outdir_var.set(path)
 
@@ -496,10 +572,10 @@ class Bat2ShGUI(tk.Tk):
     def _convert(self):
         inp = self.inp_var.get().strip()
         if not inp:
-            self._status('Please choose an input file or folder.', error=True)
+            self._status(self._t('choose_input'), error=True)
             return
         if not (inp == '-' or os.path.isfile(inp) or os.path.isdir(inp)):
-            self._status('Input not found: %s' % inp, error=True)
+            self._status(self._t('input_missing') % inp, error=True)
             return
         if os.path.isdir(inp):
             self._convert_folder(inp)
@@ -509,9 +585,9 @@ class Bat2ShGUI(tk.Tk):
     def _convert_file(self, inp):
         try:
             data = self._read(inp)
-            sh = Translator().convert(data, clean=self.clean_var.get())
+            sh = Translator().convert(data, clean=not self.debug_var.get())
         except Exception as e:  # noqa: BLE001
-            self._status('Conversion error: %s' % e, error=True)
+            self._status(self._t('conv_err') % e, error=True)
             self._set_preview('')
             return
 
@@ -519,13 +595,14 @@ class Bat2ShGUI(tk.Tk):
             ok, err = self._bash_check(sh)
             text = sh + ('\n\n--- bash -n errors ---\n' + err if not ok else '')
             self._set_preview(text)
-            self._status('Syntax %s' % ('OK' if ok else 'FAIL'), error=not ok)
+            ok_txt = self._t('syntax_ok') if ok else self._t('syntax_fail')
+            self._status(ok_txt, error=not ok)
             return
 
         mode = self.out_mode.get()
         if mode == 'stdout':
             self._set_preview(sh, data)
-            self._status('Preview ready (not written to disk).')
+            self._status(self._t('preview_ready'))
             return
 
         dst = self._build_dst(inp)
@@ -535,15 +612,15 @@ class Bat2ShGUI(tk.Tk):
             return
         if self.noclobber_var.get() and os.path.exists(dst):
             self._set_preview(sh)
-            self._status('Skipped %s (already exists).' % dst)
+            self._status(self._t('skipped') % dst)
             return
         try:
             self._write(dst, sh)
         except OSError as e:
-            self._status('Write error: %s' % e, error=True)
+            self._status(self._t('write_err') % e, error=True)
             return
         self._set_preview(sh, data)
-        self._status('Wrote %s' % dst)
+        self._status(self._t('wrote') % dst)
 
     def _convert_folder(self, folder):
         files = []
@@ -552,7 +629,7 @@ class Bat2ShGUI(tk.Tk):
                 if fn.lower().endswith(('.bat', '.cmd')):
                     files.append(os.path.join(root, fn))
         if not files:
-            self._status('No .bat/.cmd files found in folder.', error=True)
+            self._status(self._t('no_bat'), error=True)
             return
 
         mode = self.out_mode.get()
@@ -597,7 +674,7 @@ class Bat2ShGUI(tk.Tk):
             self.progress['value'] = i
             self.update_idletasks()
         self._set_preview('\n'.join(lines))
-        self._status('Processed %d file(s).' % len(files))
+        self._status(self._t('processed') % len(files))
 
     # clipboard and save
     def _copy(self):
@@ -605,16 +682,17 @@ class Bat2ShGUI(tk.Tk):
         if text.strip():
             self.clipboard_clear()
             self.clipboard_append(text)
-            self._status('Script copied to clipboard.')
+            self._status(self._t('copied'))
 
     def _save_as(self):
         text = self.preview.get('1.0', tk.END)
         if not text.strip():
-            self._status('Nothing to save yet.', error=True)
+            self._status(self._t('nothing_to_save'), error=True)
             return
         path = filedialog.asksaveasfilename(
-            title='Save Shell Script As', defaultextension='.sh',
-            filetypes=[('Shell script', '*.sh'), ('All files', '*.*')])
+            title=self._t('dlg_save_as'), defaultextension='.sh',
+            filetypes=[(self._t('ft_shell'), '*.sh'),
+                       (self._t('ft_all'), '*.*')])
         if path:
             try:
                 with open(path, 'w', encoding='utf-8') as f:
@@ -623,9 +701,9 @@ class Bat2ShGUI(tk.Tk):
                     os.chmod(path, 0o755)
                 except OSError:
                     pass
-                self._status('Saved %s' % path)
+                self._status(self._t('saved') % path)
             except OSError as e:
-                self._status('Save error: %s' % e, error=True)
+                self._status(self._t('save_err') % e, error=True)
 
 
 def main():

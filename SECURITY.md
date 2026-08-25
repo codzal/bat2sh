@@ -24,3 +24,14 @@ and audit it first:
 python3 -m bat2sh --analyze suspect.bat --report report.md
 python3 -m bat2sh -c suspect.bat      # + shellcheck hints if installed
 ```
+
+## Automated scanner baseline
+
+`bandit` reports a handful of low-severity notes by design:
+
+* `subprocess` calls execute the converted script - that is literally the
+  product;
+* `chmod 0o755` happens only when you pass `-x/--executable`;
+* a few silent `except OSError` guards around temp-file cleanup.
+
+Anything Medium/High should be treated as a real finding.

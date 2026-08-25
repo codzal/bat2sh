@@ -1,5 +1,7 @@
 # bat2sh — Windows Batch to Shell Converter
 
+<img src="assets/logo.jpeg" width="120" align="left" alt="bat2sh logo">
+
 **English** | [Русский](README_RU.md)
 
 [![CI](https://github.com/codzal/bat2sh/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/codzal/bat2sh/actions/workflows/ci.yml) [![CodeQL](https://github.com/codzal/bat2sh/actions/workflows/codeql.yml/badge.svg)](https://github.com/codzal/bat2sh/security/code-scanning) ![python](https://img.shields.io/badge/python-3.6%2B-blue) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![status](https://img.shields.io/badge/status-beta-orange)
@@ -10,7 +12,7 @@
 [CLI reference](#command-line-usage) · [GUI](#graphical-interface) ·
 [Examples](#examples) · [How it works](#how-it-works) ·
 [Limitations](#limitations) · [Security](SECURITY.md) ·
-[Wiki (RU)](https://github.com/codzal/bat2sh/wiki)
+[Wiki](https://github.com/codzal/bat2sh/wiki)
 
 `bat2sh` translates Windows batch (`.bat` / `.cmd`) scripts into POSIX
 `bash` scripts. It is a best-effort, block-oriented translator that handles
@@ -50,55 +52,24 @@ Generated scripts need nothing but `bash`: run them with `bash name.sh`.
 
 ---
 
-## Features
+## Features (5 pillars)
 
-* **Layout** — `bat2sh/` package (`shell` expansions, `parser`, `translator`,
-  `commands` map, `cli`) with a thin Tkinter `frontend.py`.
-
-* **Variables** — `set`, `set /a`, `set /p`, `%VAR%`, delayed `!VAR!`,
-  substrings `%VAR:~0,5%` (including negative `%~-5` offsets, clamped to the
-  whole string when shorter) and string replacement `%VAR:find=rep%`,
-  arguments `%1`…`%9`, `%*`, `%~dp0` and other `%~` modifiers, the special
-  `errorlevel` variable.
-* **Control flow** — `if`, `if not`, `if /i`, `if exist`, `if defined`,
-  `if errorlevel`, string and numeric comparisons (`equ`/`neq`/`gtr`/`geq`/
-  `lss`/`leq`), `else` branches, `for`, `for /l`, `for /r`, `for /f` (with `tokens=`,
-  `delims=`, `skip=`, and quoted-string/literal sources), **nested** `for` and
-  `if` blocks, `goto` (including jumping out of loops) and `call` subroutines
-  with their own argument stack.
-* **Redirection & operators** — `>`, `>>`, `<`, pipes `|`, and the `&`,
-  `&&`, `||` separators. The Windows `nul` device becomes `/dev/null`.
-  Literal comparisons such as `>=` / `<=` inside text are preserved.
-* **Common commands** — `echo`, `rem`/`::`, `@`, `cd`, `md`/`mkdir`,
-  `rd`/`rmdir` (incl. `/s`), `del`/`erase` (incl. `/s`), `copy`, `move`,
-  `ren`, `type`, `cls`, `pause`, `exit`, `title`, `color`, `setlocal`/
-  `endlocal`, `pushd`/`popd`, `shift`, `start`, `dir`, `find`, `findstr`,
-  `path`, `choice`, `cmd /c` and many standard Windows commands mapped to
-  their POSIX equivalents (`tasklist`→`ps`, `xcopy`→`cp -r`, `ping`→`ping`,
-  `ipconfig`→`ip`, `setx`→`export`, `timeout`→`sleep`, …).
-* **Path translation** — `C:\dir\file` becomes `/mnt/c/dir/file` and
-  backslashes are converted to forward slashes.
-* **Audit & reports** — `--analyze` flags registry access, Windows binaries
-  (`wine` or native-equivalent suggestions) and service management;
-  `--report out.md|.html` writes a migration report with per-file coverage.
-* **PowerShell target (beta)** — `--target=ps1` emits PowerShell instead of
-  bash for common constructs.
-* **shellcheck** hints run automatically with `-c` when installed.
-* **Editor integration** — `--install-vscode-task [DIR]` creates a one-key
-  convert task for VS Code / VSCodium.
-* **Runtime layer** — `--runtime-layer` injects `check_errorlevel()` and
-  `/tmp/bat2sh_drives/<X>` symlinks; `--strict-bash` inserts
-  `set -euo pipefail`; `-x` marks outputs executable.
-* **Custom command rules** — map your own tools in
-  `~/.config/bat2sh/config.toml`:
-  `[commands] my_tool = "mytool-linux {args}"`.
-* **Robust input** — UTF-8 (with or without BOM) and UTF-16 batch files
-  are decoded automatically.
-* **cmd.exe-style diagnostics** - unknown commands print
-  `'x' is not recognized as an internal or external command…`, missing
-  labels report `The system cannot find the batch label specified - X`
-  (`goto` stops, `call` continues), and when launched without a terminal
-  (e.g. from Dolphin) errors appear in dialog windows instead of stderr.
+1. **Faithful translation core** — variables (delayed expansion, substrings,
+   case-insensitive replacement), full control flow incl. `for /r`, `for /f`
+   with real cmd semantics, subroutines as bash functions, cmd.exe-style
+   error messages and honest exit codes.
+2. **Audit before you trust** — `--analyze` flags registry access, Windows
+   binaries (wine/native hints) and service calls; `--report` writes an
+   HTML/Markdown migration report with per-file coverage.
+3. **Run it safely** — `-r` execute instantly, `--diff` side-by-side preview,
+   `-c` + automatic shellcheck hints, `--strict-bash`, `--runtime-layer`,
+   opt-in `-x`, custom command rules via TOML config.
+4. **Two targets, any paths** — bash by default, PowerShell beta via
+   `--target=ps1`; drive letters as WSL, Wine or root style
+   (`--path-style`); Windows env vars mapped to XDG.
+5. **Friendly tooling** — Tkinter GUI (dual-pane viewer with sync scroll &
+   highlighting, target presets, RU/EN interface), VS Code task installer,
+   snapshot tests + CI.
 
 ---
 
@@ -139,7 +110,6 @@ python3 -m bat2sh -c examples/
 | `-i`, `--inplace` | Write `<input>.sh` beside the input file |
 | `-o`, `--output-dir DIR` | Write outputs into `DIR` (mirrors the folder tree for directories; places `<name>.sh` there for a single file) |
 | `-c`, `--check` | Only run `bash -n` on the result; no files written |
-| `-n`, `--no-debug` | Strip converter-injected comments/placeholders; keep only comments from the original batch file |
 | `-C`, `--no-clobber` | Don't overwrite existing output files |
 | `-r`, `--run` | Convert and execute immediately (nothing written) |
 | `--path-style {wsl,wine,root}` | Drive-letter mapping style |
@@ -147,6 +117,7 @@ python3 -m bat2sh -c examples/
 | `-x`, `--executable` | chmod +x written .sh files |
 | `--diff` | Show batch vs bash side by side |
 | `--strict-bash` | Insert `set -euo pipefail` |
+| `-d`, `--debug` | Keep converter debug comments (output is clean by default) |
 | `--analyze` / `--report FILE` | Compatibility audit / migration report |
 | `--runtime-layer` | Inject errorlevel + drive-symlink helpers |
 | `--target {bash,ps1}` | Output language (ps1 is beta) |
@@ -176,6 +147,9 @@ keyboard shortcuts (`Ctrl+O`, `Ctrl+S`, `Ctrl+C`, `F5`) are provided.
 The UI language can be switched in the **Language** menu - English is
 built in, further languages ship as editable `languages/<code>.txt`
 packs (e.g. `languages/ru.txt`).
+
+> ⚠️ Non-English UI packs are community translations and may be incomplete.
+> English is the reference language. The **wiki** is maintained in English only.
 
 ---
 
@@ -225,19 +199,20 @@ This faithfully models `goto`, including jumps that leave `for`/`if` blocks
 
 ## Limitations
 
-`bat2sh` is a translator, not an emulator. Known caveats:
+bat2sh is a translator, not an emulator. Known caveats:
 
 * `errorlevel` reflects the status of the **last executed command**, exactly
-  as in batch; if a command such as `echo` runs between the command and an
-  `if errorlevel` test, the value is reset (this matches real `cmd.exe`).
-* `start` strips its switches/title and runs the program in the background
-  (`nohup … &`) - there is no console/session concept in POSIX.
-* `color`, `mode`, `chcp` and a few other console-only commands are no-ops.
-* The command source of `for /f '…'` is executed as a shell command with
-  variables pre-expanded; batch-only syntax inside it is not re-parsed.
-  `cmd /c other.bat` invokes the converted `other.sh` sibling.
+  as in batch (this matches real `cmd.exe`).
+* `start` strips switches/title and backgrounds the process (`nohup ... &`);
+  POSIX has no console/session concept.
+* `color` sets ANSI text color only; `mode`, `chcp` and a few console-only
+  commands are no-ops.
+* The command source of `for /f '...'` executes as a shell command;
+  batch-only syntax inside is not re-parsed.
 * Computed variable names (`!prefix_%%i!`) and dynamic call labels
-  (`call :!name!`) have no direct bash equivalent and stay untranslatable.
+  (`call :!name!`) have no direct bash equivalent.
+* The PowerShell target covers a basic subset and is marked beta.
+* GUI translations other than English may be incomplete.
 
 Patches and example batch files that expose missing behaviour are welcome.
 

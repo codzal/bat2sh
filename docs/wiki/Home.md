@@ -1,29 +1,33 @@
-# bat2sh — вики
+# bat2sh wiki
 
-Транслирует Windows batch (`.bat`/`.cmd`) в bash (и, экспериментально, в PowerShell).
+Translates Windows batch (`.bat`/`.cmd`) into bash (and, experimentally,
+PowerShell).
 
-**Разделы для пользователей**
+**For users**
 
-* [[Установка]]
-* [[Быстрый старт]]
-* [[Справочник CLI]] — все флаги с примерами
-* [[Поддерживаемые конструкции]] — что и во что конвертируется
-* [[Аудит и отчёты]] — `--analyze`, `--report`
-* [[Графический интерфейс]]
-* [[Ограничения]]
+* [[Installation]]
+* [[Quick Start]]
+* [[CLI Reference]] - every flag with examples
+* [[Supported Constructs]] - what converts into what
+* [[Audit and Reports]] - `--analyze`, `--report`
+* [[GUI]]
+* [[Limitations]]
 
-**Для разработчиков**
+**For developers**
 
-* [[Архитектура]]
-* [[Runtime-слой и хелперы]]
-* [[PowerShell-таргет (beta)]]
-* [[Языковые пакеты GUI]]
-* [[Тесты и CI]]
+* [[Architecture]]
+* [[Runtime Layer and Helpers]]
+* [[PowerShell Target (beta)]]
+* [[Language Packs]]
+* [[Tests and CI]]
 
-**Мета**
+**Meta**
 
 * [Contributing](https://github.com/codzal/bat2sh/blob/dev/CONTRIBUTING.md)
 * [Changelog](https://github.com/codzal/bat2sh/blob/dev/CHANGELOG.md)
 
-> Статус проекта: **beta (v0.3)**. Возможности развиваются, перед
-> использованием результата проверяйте скрипты через `-c` / `--analyze`.
+> Status: **beta (v0.3)**. Verify generated scripts with `-c` /
+> `--analyze` before relying on them.
+
+> Note: this wiki is maintained in **English only**. The desktop GUI ships
+> additional UI languages that may be incomplete.

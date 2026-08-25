@@ -7,12 +7,40 @@ from .parser import Parser
 from .shell import (_unquote, dos_slashes, expand_vars, fix_redir,
                     split_args, split_redir, split_top_ops, unescape_caret,
                     winpath)
+# JSON-backed registry emulation for `reg add/query/delete`
+REG_FUNCS = """\
+REG_FILE="${BAT2SH_REG:-$HOME/.config/bat2sh/registry.json}"
+reg_add() { python3 -c '
+import json,sys,os
+p,k,n,v=sys.argv[1:5]
+d=json.load(open(p)) if os.path.exists(p) else {}
+d.setdefault(k,{})[n]=v
+os.makedirs(os.path.dirname(p),exist_ok=True)
+json.dump(d,open(p,"w"),indent=1)
+' "$REG_FILE" "$1" "$2" "$3"; }
+reg_query() { python3 -c '
+import json,sys,os
+d=json.load(open(sys.argv[1])) if os.path.exists(sys.argv[1]) else {}
+v=d.get(sys.argv[2],{}).get(sys.argv[3])
+print(v if v is not None else "The system cannot find the specified registry key or value.")
+sys.exit(0 if v is not None else 1)
+' "$REG_FILE" "$1" "$2"; }
+reg_del() { python3 -c '
+import json,sys,os
+p=sys.argv[1]
+d=json.load(open(p)) if os.path.exists(p) else {}
+d.get(sys.argv[2],{}).pop(sys.argv[3],None)
+json.dump(d,open(p,"w"),indent=1)
+' "$REG_FILE" "$1" "$2"; }
+"""
+
 
 class Translator:
     def __init__(self):
         self.label_map = {}
         self.func_names = {}
         self._need_ci = False
+        self._need_reg = False
 
         def _sub_nul(a):
             return 'cat ' + re.sub(r'\bnul\b', '/dev/null', expand_vars(a))
@@ -77,6 +105,9 @@ class Translator:
                         'specified - %s" >&2; PC=-1; }' % tgt)
             return 'PC=%d; return' % t
 
+        if lcmd == 'reg':
+            return self.cmd_reg(args)
+
         h = self._cmd.get(lcmd)
         if h is not None:
             return h(args)
@@ -85,6 +116,34 @@ class Translator:
             return handler(args)
 
         return expand_vars(seg)
+
+    def cmd_reg(self, args):
+        """reg add/query/delete -> JSON-backed registry emulation."""
+        self._need_reg = True
+        t = split_args(expand_vars(args.strip()))
+        if not t:
+            return ':  # reg'
+        op = t[0].lower()
+        key = '"%s"' % (t[1].replace('\\', '/') if len(t) > 1 else '')
+        name, val = '(Default)', ''
+        rest, i = t[2:], 0
+        while i < len(rest):
+            k = rest[i].lower()
+            if k == '/v' and i + 1 < len(rest):
+                name = rest[i + 1]; i += 2
+            elif k == '/ve':
+                name = '(Default)'; i += 1
+            elif k == '/d' and i + 1 < len(rest):
+                val = rest[i + 1]; i += 2
+            else:
+                i += 1
+        if op.startswith('add'):
+            return 'reg_add %s "%s" "%s"' % (key, name, val)
+        if op.startswith('query'):
+            return 'reg_query %s "%s"' % (key, name)
+        if op.startswith('delete'):
+            return 'reg_del %s "%s"' % (key, name)
+        return ':  # reg %s' % op
 
     def cmd_cmd(self, args):
         m = re.match(r'/[ck]\s+"?(.*?)"?\s*$', args, re.IGNORECASE)
@@ -244,14 +303,24 @@ class Translator:
         a = expand_vars(args).strip()
         if a == '':
             return ':'
-        a = re.sub(r'/[a-z]+\b\s*', '', a, flags=re.IGNORECASE)
-        m = re.match(r'"([^"]*)"\s*(.*)$', a)
+        wait = bool(re.search(r'/wait\b', a, re.I))
+        rest = re.sub(r'/[a-z]+\b\s*', '', a,
+                      flags=re.IGNORECASE).strip()
+        m = re.match(r'"([^"]*)"\s*(.*)$', rest)
         if m:
             rest = m.group(2).strip()
-            if not rest:
-                return ':  # start: empty title only'
-            return 'nohup %s >/dev/null 2>&1 &' % rest
-        return 'nohup %s >/dev/null 2>&1 &' % a
+        if not rest:
+            return ':  # start: empty title only'
+        low = rest.lower()
+        if low.startswith(('http://', 'https://', 'www.')) or \
+                rest.endswith('.url'):
+            core = 'xdg-open %s' % (rest if rest.startswith('"')
+                                    else '"%s"' % rest)
+        else:
+            core = rest
+        if wait:
+            return core
+        return 'nohup %s >/dev/null 2>&1 &' % core
 
     def cmd_dir(self, args):
         a = args.strip()
@@ -613,7 +682,7 @@ class Translator:
             return True
         return False
 
-    def convert(self, text, clean=False):
+    def convert(self, text, clean=False, shebang=None):
         text = self.join_continuations(text)
         nodes = Parser(text).parse_program()
         indexed = list(enumerate(nodes))
@@ -715,8 +784,13 @@ choice() {
         esac
         shift
     done
-    read -n1 -r -p "$prompt" _ch || _ch=""
+    if [ -n "$t" ]; then
+        read -n1 -r -t "$t" -p "$prompt" _ch || _ch=""
+    else
+        read -n1 -r -p "$prompt" _ch || _ch=""
+    fi
     echo
+    [ -z "$_ch" ] && [ -n "$default" ] && _ch="$default"
     if [ -t 0 ]; then
         IFS= read -r _rest || true
     fi
@@ -725,7 +799,7 @@ choice() {
         c="${opts:i-1:1}"
         if [ "$_ch" = "$c" ]; then ERRORLEVEL=$i; return; fi
     done
-    ERRORLEVEL=0
+    ERRORLEVEL=255
 }
 
 dispatch() {
@@ -745,6 +819,8 @@ run
 exit $ERRORLEVEL
 '''
         extras = func_defs
+        if self._need_reg:
+            extras = [REG_FUNCS] + extras
         if self._need_ci:
             ci_helper = (
                 '# case-insensitive replace (batch semantics):'
@@ -757,6 +833,11 @@ exit $ERRORLEVEL
                 '}')
             extras = [ci_helper] + extras
         script = preamble + '\n'.join(arms) + epilogue
+        if shebang:
+            lines = script.split('\n')
+            lines[0] = shebang if shebang.startswith('#!') \
+                else '#!' + shebang
+            script = '\n'.join(lines)
         if extras:
             marker = 'dispatch() {\n    case $PC in'
             head, tail = preamble.split(marker)

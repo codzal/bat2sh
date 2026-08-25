@@ -13,20 +13,38 @@ def _unquote(s):
     return s
 
 
+# drive-letter translation style, set from CLI: 'wsl' | 'wine' | 'root'
+PATH_STYLE = 'wsl'
+_WINE_ROOT = '~/.wine'
+
+
+def set_path_style(style):
+    global PATH_STYLE
+    PATH_STYLE = style if style in ('wsl', 'wine', 'root') else 'wsl'
+    winpath.cache_clear()
+
+
+def _drive(m):
+    d = m.group(1).lower()
+    rest = m.group(2).replace('\\', '/')
+    if PATH_STYLE == 'wine':
+        return '%s/drive_%s/%s' % (_WINE_ROOT, d, rest)
+    if PATH_STYLE == 'root':
+        return '/%s' % rest
+    return '/mnt/%s/%s' % (d, rest)
+
+
 @lru_cache(maxsize=8192)
 def winpath(s):
+    """Translate a Windows path per PATH_STYLE."""
     if not s:
         return s
     s = expand_vars(s)
     s = s.strip()
-    quoted = s.startswith('"') and s.endswith('"')
-    if quoted:
+    if s.startswith('"') and s.endswith('"'):
         s = s[1:-1]
-    m = re.match(r'^([A-Za-z]):[\\/](.*)$', s)
-    if m:
-        s = '/mnt/' + m.group(1).lower() + '/' + m.group(2)
-    s = s.replace('\\', '/')
-    return s
+    s = re.sub(r'^([A-Za-z]):[\\/](.*)$', _drive, s)
+    return s.replace('\\', '/')
 
 
 def fix_redir(redir):
@@ -144,6 +162,16 @@ _RX_ARG = re.compile(r'%~?(\d+)')
 _RX_ERRLEVEL = re.compile(r'%errorlevel%', re.IGNORECASE)
 _RX_VAR = re.compile(r'%([A-Za-z_][\w.]*)%')
 _RX_ESC_PCT = re.compile(r'%%(?![\w])')
+
+_WIN_ENV = {
+    'TEMP': '${TMPDIR:-/tmp}', 'TMP': '${TMPDIR:-/tmp}',
+    'USERPROFILE': '$HOME', 'HOMEPATH': '${HOME:-~}',
+    'HOMEDRIVE': '', 'APPDATA': '${XDG_CONFIG_HOME:-$HOME/.config}',
+    'LOCALAPPDATA': '${XDG_DATA_HOME:-$HOME/.local/share}',
+    'PROGRAMFILES': '/opt', 'PROGRAMFILES(X86)': '/opt',
+    'PROGRAMDATA': '/etc', 'PUBLIC': '/usr/share',
+    'SYSTEMROOT': '/etc', 'WINDIR': '/etc', 'COMPUTERNAME': '${HOSTNAME:-$(hostname)}',
+}
 _RX_REPL_DEL = re.compile(r'!([A-Za-z_][\w.]*):([^=!]*)=([^!]*)!')
 _RX_DEL = re.compile(r'!([A-Za-z_][\w.]*(?::~[^!]*)?)!')
 _RX_SUBSTR_INNER = re.compile(r'([A-Za-z_][\w.]*):~(-?\d+)(?:,(\d+))?')
@@ -223,7 +251,14 @@ def expand_vars(s):
     s = s.replace('%*', '"${ARGS[@]}"')
     s = _RX_ARG.sub(_arg_sub, s)
     s = _RX_ERRLEVEL.sub('${ERRORLEVEL}', s)
-    s = _RX_VAR.sub(lambda m: '${%s}' % m.group(1).replace('.', '_'), s)
+    def _var_sub(m):
+        name = m.group(1)
+        known = _WIN_ENV.get(name.upper())
+        if known is not None:
+            return known
+        return '${%s}' % name.replace('.', '_')
+
+    s = _RX_VAR.sub(_var_sub, s)
     s = _RX_ESC_PCT.sub('%', s)
 
     def _del(m):

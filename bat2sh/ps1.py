@@ -29,36 +29,69 @@ def _ps_inner(name):
 
 
 def _ps_name(name):
-    return '${' + _ps_inner(name) + '}'
+    inner = _ps_inner(name)
+    if inner.startswith('$'):
+        return inner                    # full expression from _WIN_ENV
+    return '${' + inner + '}'
 
 
 def _ps_value(text, arith=False, loop_var=None):
     if arith:
-        # in set /a a doubled % is the modulo operator; only the ACTIVE
-        # for-loop letter is a variable reference
+        # %% is modulo here; only the active loop letter is a variable
         if loop_var:
             text = re.sub(re.escape('%%' + loop_var) + r'\b',
                           '$%s' % loop_var, text)
             text = re.sub(r'%%+(?![%w])', '%', text)
         else:
             text = re.sub(r'%%+', '%', text)
-        text = re.sub(r'%(?!%)((?:[1-9]))',
+        text = re.sub(r'%~?([1-9])',
                       lambda m: '$($args[%d])' % (int(m.group(1)) - 1), text)
         return text
     """%VAR% / !VAR! / %1 / %%a -> PowerShell variable syntax."""
+    # loop-variable modifiers: %%~zF -> $f.Length, %%~nF -> $f.BaseName
+    _lmod_map = {'z': '.Length', 'f': '.FullName', 'n': '.BaseName',
+                 'x': '.Extension', 't': '.LastWriteTime', 'a': '.Attributes',
+                 'p': '.DirectoryName', 'd': '.PSDrive.Name'}
+
+    def _lmod(m):
+        mods, letter = m.group(1), m.group(2).lower()
+        chars = mods[1:] if mods.startswith('~') else mods
+        props = ''.join(_lmod_map.get(c, '\x01') for c in chars)
+        if '\x01' in props:
+            return m.group(0)
+        return '$%s%s' % (letter, props)
+
+    def _drepl(m):
+        base = _ps_value(m.group(1))
+        srch = "'" + _ps_value(m.group(2)).replace("'", "''") + "'"
+        repl = "'" + _ps_value(m.group(3)).replace("'", "''") + "'"
+        return '(%s.Replace(%s, %s))' % (base, srch, repl)
+
+    def _dynbang(m):
+        if '%' not in m.group(1):
+            return m.group(0)
+        return ('$(Get-Variable -Name (%s) -ValueOnly)'
+                % _name_expr(m.group(1)))
+
+    text = re.sub(r'%%(~[a-zA-Z]*|[A-Za-z])([A-Za-z])\b', _lmod, text)
     text = re.sub(r'%%([A-Za-z])\b', r'$\1', text)          # loop variables
+    text = re.sub(r'!([^!:\n]+):([^!\n]*)=([^!\n]*)!', _drepl, text)
+    text = re.sub(r'!([^!\n]+)!', _dynbang, text)
     text = re.sub(r'[!%]([A-Za-z_][\w.]*)[!%]',
-                  lambda m: '${' + _ps_inner(m.group(1)) + '}', text)
+                  lambda m: _ps_name(m.group(1)), text)
     text = re.sub(r'%(?!%)([A-Za-z_]\w*)',
-                  lambda m: '${' + _ps_inner(m.group(1)) + '}', text)
-    text = re.sub(r'%(?!%)([1-9])',
+                  lambda m: _ps_name(m.group(1)), text)
+    text = re.sub(r'%~?([1-9])',
                   lambda m: '$($args[%d])' % (int(m.group(1)) - 1), text)
-    return text.replace('%%', '%')
+    text = text.replace('%%', '%')
+    return re.sub(r'!([^!\n]+)!', r'\1', text)
 
 
 def _q(text):
-    """Quote a literal for double-quoted PS string, keeping $ alive."""
-    return '"%s"' % text.replace('"', '`"')
+    """Quote a literal for double-quoted PS string, keeping $ alive;
+    bare $names get braced so trailing ':' stays literal."""
+    text = text.replace('"', '`"')
+    return '"%s"' % re.sub(r'\$(\w+)', r'${\1}', text)
 
 
 def _split_args(s):
@@ -80,6 +113,28 @@ def _split_args(s):
     if cur:
         out.append(cur)
     return out
+
+
+_DYN_TOK = re.compile(r'%~?\d|%(?:[A-Za-z_]\w*)%|![^!\n]+!|%%~?[a-zA-Z]+')
+
+
+def _is_dyn_name(name):
+    """True when a set target builds its name from variables or args."""
+    return bool(_DYN_TOK.search(name))
+
+
+def _name_expr(raw):
+    """Turn a batch dynamic name (seen_%%w, %~2, map!i!) into a PS string
+    expression that evaluates to the variable name at runtime."""
+    parts, last = [], 0
+    for m in _DYN_TOK.finditer(raw):
+        if m.start() > last:
+            parts.append("'%s'" % raw[last:m.start()].replace("'", "''"))
+        parts.append(_ps_value(m.group(0)))
+        last = m.end()
+    if last < len(raw):
+        parts.append("'%s'" % raw[last:].replace("'", "''"))
+    return ' + '.join(parts) if parts else "''"
 
 
 _CMD_MAP = {
@@ -123,6 +178,7 @@ class PSG:
         self.stats = {'stmts': 0, 'fallback': 0}
         self.loop_var = None
         self._need_reg = False
+        self.dispatch = None
         self.lines = []
 
     # ---------------- small emitters ----------------
@@ -137,7 +193,7 @@ class PSG:
     def expr(self, text, arith=False):
         t = _ps_value(text, arith=arith,
                       loop_var=getattr(self, 'loop_var', None))
-        # set /a style arithmetic is native in parens; keep as-is
+        # arithmetic survives as-is inside parens
         t = re.sub(r'\bEQU\b', '-eq', t, flags=re.I)
         t = re.sub(r'\bNEQ\b', '-ne', t, flags=re.I)
         t = re.sub(r'\bLSS\b', '-lt', t, flags=re.I)
@@ -222,6 +278,9 @@ class PSG:
         mapped = _CMD_MAP.get(cmd)
         if mapped:
             argv = _ps_value(args)
+            # stream redirects must go before file-redirect detection
+            argv = re.sub(r'\s*2>&1\b', '', argv)
+            argv = re.sub(r'\s*[12]?>\s*nul(?![\w.])', '', argv, flags=re.I)
             redir = ''
             mm = re.search(r'>>\s*(\S+)\s*$', argv)
             if mm:
@@ -241,7 +300,16 @@ class PSG:
             return
 
         # unknown: assume it exists on the Windows host running pwsh
-        self.w(ind, _ps_value(st) + '  # native invocation')
+        line = _ps_value(st)
+        if '%' in line or line.count('"') % 2 == 1:
+            self.w(ind, line)
+            return
+        cleaned = re.sub(r'\s*2>&1\b', '', line)
+        cleaned = re.sub(r'\s*[12]?>\s*nul(?![\w.])', '', cleaned, flags=re.I)
+        if cleaned != line:
+            self.w(ind, cleaned.strip() + ' | Out-Null')
+        else:
+            self.w(ind, line)
 
     _SVC_GUARD = (
         '$svcCmd = Get-Command -Name "{verb}-Service" '
@@ -338,6 +406,19 @@ class PSG:
             argv += ",'%s'" % val.replace("'", "''")
         self.w(ind, '%s %s' % (fn, argv))
 
+    def _dyn_arith(self, ind, name_raw, op, rhs_raw):
+        """set /a with a computed variable name -> Set-Variable block."""
+        rhs_e = self.expr(rhs_raw.strip(), arith=True)
+        self.w(ind, '$__n = %s' % _name_expr(name_raw))
+        self.w(ind, '$__v = Get-Variable -Name $__n -ValueOnly '
+                    '-ErrorAction SilentlyContinue')
+        self.w(ind, 'if ($null -eq $__v) { $__v = 0 }')
+        if op:
+            self.w(ind, 'Set-Variable -Name $__n -Value ($__v %s %s)'
+                   % (op, rhs_e))
+        else:
+            self.w(ind, 'Set-Variable -Name $__n -Value (%s)' % rhs_e)
+
     def cmd_set(self, args, ind):
         mm = re.match(r'/p\s+(\w+)\s*=\s*(.*)$', args, re.I)
         if mm:
@@ -347,12 +428,47 @@ class PSG:
             return
         mm = re.match(r'/a\s+(.+)$', args, re.I)
         if mm:
-            body = mm.group(1)
+            body = re.sub(r'\s*[12]?>\s*nul(?![\w.])\s*$', '',
+                          mm.group(1).strip(), flags=re.I)
+            if len(body) > 1 and body[0] == '"' == body[-1]:
+                body = body[1:-1]
+            if '!' in body:
+                # delayed expansion inside set /a is a plain assignment
+                bm = re.match(r'"?(.+?)"?\s*([+\-*/])?=\s*"?(.+?)"?$', body)
+                if bm:
+                    nm_raw, opv, val_raw = bm.groups()
+                    val_e = _ps_value(val_raw)
+                    if _is_dyn_name(nm_raw):
+                        self.w(ind, 'Set-Variable -Name (%s) -Value (%s)'
+                               % (_name_expr(nm_raw), val_e))
+                    else:
+                        tgt = ('$env:' + nm_raw) if nm_raw.isupper() \
+                            else '$' + nm_raw.lower()
+                        self.w(ind, '%s = (%s)' % (tgt, val_e))
+                    return
             assignments = re.findall(
                 r'([A-Za-z_]\w*)\s*=\s*([^,]+?)(?=\s*,|'
                 r'\s+[A-Za-z_]\w*\s*=|$)', body)
             if not assignments:
-                self.w(ind, '$null = (%s)' % self.expr(body))
+                # single operator-assign: L+=1 / X=5 (findall misses these)
+                om = re.match(r'([A-Za-z_]\w*)\s*([+\-*/])?=\s*(.+)$', body)
+                if om and '%' not in body:
+                    name, opch, rhs = om.groups()
+                    tgt = ('$env:' + name) if name.isupper() \
+                        else '$' + name.lower()
+                    self.w(ind, '%s %s= (%s)'
+                           % (tgt, opch or '', self.expr(rhs.strip(),
+                                                         arith=True)))
+                    return
+                # computed names land in Set-Variable
+                gm = re.match(r'"?(.+?)"?\s*([+\-*/])?=\s*"?(.+?)"?\s*$', body)
+                if gm and _is_dyn_name(gm.group(1)):
+                    self._dyn_arith(ind, gm.group(1), gm.group(2), gm.group(3))
+                    return
+                if '%' in body:
+                    self.warn(ind, 'set /a ' + body)
+                    return
+                self.w(ind, '$null = (%s)' % self.expr(body, arith=True))
                 return
             for name, rhs in assignments:
                 tgt = ('$env:' + name) if name.isupper() \
@@ -370,6 +486,19 @@ class PSG:
             else:
                 self.w(ind, '%s = %s' % (tgt, _q(_ps_value(val.strip('"')))))
             return
+        dm = re.match(r'"?(.+?)"?=(.*)$', args, re.S)
+        if dm and _is_dyn_name(dm.group(1)):
+            self.w(ind, 'Set-Variable -Name (%s) -Value %s'
+                   % (_name_expr(dm.group(1)),
+                      _q(_ps_value(dm.group(2).strip().strip('"')))))
+            return
+        arg = args.strip()
+        if _is_dyn_name(arg):
+            # whole argument is computed: set %%~p -> NAME=VALUE at runtime
+            self.w(ind, '$__kv = (%s)' % _ps_value(arg))
+            self.w(ind, "Set-Variable -Name ($__kv -split '=', 2)[0] "
+                        "-Value ($__kv -split '=', 2)[1]")
+            return
         self.warn(ind, 'set ' + args)
 
     # ---------------- structured statements ----------------
@@ -380,8 +509,37 @@ class PSG:
         elif t == 'label':
             pass
         elif t == 'simple':
-            parts = re.split(r'&&|\|\||&|\|', node[1])
-            ops = re.findall(r'&&|\|\||&|\|', node[1])
+            # split on operators, honoring quotes and 2>&1-style tokens
+            parts, ops, buf = [], [], []
+            s, i, n = node[1], 0, len(node[1])
+            while i < n:
+                c = s[i]
+                if c == '"':
+                    j = s.find('"', i + 1)
+                    j = n - 1 if j < 0 else j
+                    buf.append(s[i:j + 1])
+                    i = j + 1
+                    continue
+                if s[i:i + 3] in ('>&1', '>&2'):
+                    buf.append(s[i:i + 3])
+                    i += 3
+                    continue
+                two = s[i:i + 2]
+                if two in ('&&', '||'):
+                    parts.append(''.join(buf))
+                    buf = []
+                    ops.append(two)
+                    i += 2
+                    continue
+                if c in '&|':
+                    parts.append(''.join(buf))
+                    buf = []
+                    ops.append(c)
+                    i += 1
+                    continue
+                buf.append(c)
+                i += 1
+            parts.append(''.join(buf))
             buf = parts[0]
             self.cmd(buf, ind)
             for op, tail in zip(ops, parts[1:]):
@@ -406,14 +564,30 @@ class PSG:
             for n in node[1]:
                 self.emit_node(n, ind)
         elif t in ('goto', 'goto_eof'):
-            self.warn(ind, node[0] + ' ' + str(node[1] if len(node) > 1
-                                              else 'eof'))
+            if self.dispatch:
+                if t == 'goto_eof':
+                    self.w(ind, 'break __loop')
+                else:
+                    tgt = self.dispatch.get(str(node[1]).upper())
+                    if tgt:
+                        self.w(ind, "$__pc = '%s'; continue __loop" % tgt)
+                    else:
+                        self.warn(ind, 'goto ' + str(node[1]))
+            elif t == 'goto_eof':
+                self.w(ind, 'return')          # goto :eof inside a subroutine
+            else:
+                self.warn(ind, node[0] + ' ' + str(node[1] if len(node) > 1
+                                                  else 'eof'))
         elif t == 'call_sub':
             sub = node[1].lower()
             fname = self.func_names.get(sub.upper())
             if fname:
                 args = _ps_value(node[2]).strip()
                 self.w(ind, '%s %s' % (fname, args))
+            elif _is_dyn_name(node[1]):
+                args = _ps_value(node[2]).strip()
+                self.w(ind, "$__f = 'sub_' + (%s)" % _ps_value(node[1]))
+                self.w(ind, '& $__f %s' % args if args else '& $__f')
             else:
                 self.warn(ind, 'call :' + node[1])
         elif t == 'call_ext':
@@ -431,10 +605,15 @@ class PSG:
     def emit_if(self, d, ind=0):
         neg = d['neg']
         ctype, cond = d['ctype'], d['cond']
+        bad = []
 
         def line(test):
             if neg:
                 test = '(-not (%s))' % test
+            if '%' in test:
+                # w() would turn the brace into a comment; drop the block
+                bad.append(test)
+                return
             self.w(ind, 'if (%s) {' % test)
 
         close = lambda: self.w(ind, '}')
@@ -459,6 +638,9 @@ class PSG:
             line('%s -eq %s' % (_q(_ps_value(left)), _q(_ps_value(right))))
         else:
             self.w(ind, 'if ($false) {')
+        if bad:
+            self.warn(ind, 'if %s' % bad[0])
+            return
         for n in d['body']:
             self.emit_node(n, ind + 1)
         close()
@@ -497,19 +679,21 @@ class PSG:
             return
         if 'f' in flags:
             src = inner.strip()
-            mm = re.match(r'"(.*)"', src)
             delim = ''
             dm = re.search(r'delims=("?)((?:"\1)|[^"\s]*)\1', opts or '',
                            re.I)
             if dm and dm.group(2):
                 delim = dm.group(2)
-            if mm:                                     # command source
-                cmdtxt = _ps_value(mm.group(1))
+            # single-quoted = command source; double-quoted = literal string
+            if src.startswith("'") and src.endswith("'"):
+                cmdtxt = _ps_value(src[1:-1])
                 self.w(ind, '%s | ForEach-Object {' % cmdtxt)
+            elif src.startswith('"') and src.endswith('"'):
+                content = src[1:-1]
+                self.w(ind, "Write-Output %s | ForEach-Object {" % _q(content))
             else:
-                path = _ps_value(src.strip('"\''))
-                self.w(ind, 'Get-Content %s | ForEach-Object {' %
-                       _q(path.strip('"')))
+                path = _ps_value(src).strip('"')
+                self.w(ind, 'Get-Content %s | ForEach-Object {' % _q(path))
             split = ("$parts = $_ -split '%s'" % re.escape(delim)) if delim \
                 else "$parts = @($_)"
             self.w(ind + 1, split)
@@ -611,15 +795,68 @@ def convert(text):
         head += REG_HELPERS_PS.splitlines()
         head.append('')
 
-    first_sub = next((i for i, n in indexed
-                      if n[0] == 'label' and n[1].upper() in called),
-                     None)
-    for i, n in indexed:
-        if first_sub is not None and i >= first_sub:
-            break                          # subroutine region starts here
-        if n[0] == 'label':
+    sub_spans = []
+    for k, (li, nm) in enumerate(label_pos):
+        if nm not in g.func_names:
             continue
-        g.emit_node(n, 0)
+        end = label_pos[k + 1][0] if k + 1 < len(label_pos) else len(nodes)
+        sub_spans.append((li, end))
+
+    def _in_sub(i):
+        return any(a <= i < b for a, b in sub_spans)
+
+    flow_labels = [(i, nm) for i, nm in label_pos if nm not in g.func_names]
+
+    def _tree(n):
+        yield n
+        if n[0] == 'if':
+            yield from _tree(('body', n[1]['body']))
+            if n[1]['elseb']:
+                yield from _tree(('body', n[1]['elseb']))
+        elif n[0] == 'for':
+            yield from _tree(('body', n[1]['body']))
+        elif n[0] == 'block' or n[0] == 'body':
+            for ch in n[1]:
+                yield from _tree(ch)
+
+    has_jumps = any(n[0] in ('goto', 'goto_eof') and not _in_sub(i)
+                    for i, n in indexed
+                    for n in _tree(n))
+
+    if has_jumps:
+        # top-level goto: PC-switch loop like the bash backend
+        g.dispatch = {nm: 'L%d_%s' % (k, re.sub(r'\W', '_', nm).lower())
+                      for k, (_i, nm) in enumerate(flow_labels)}
+        g.lines = ['$__pc = \'__entry\'',
+                   ':__loop while ($true) {',
+                   '    switch ($__pc) {']
+        marks = [i for i, _nm in flow_labels]
+        segs = [(0, marks[0] if marks else len(nodes), '__entry')]
+        segs += [(marks[k], marks[k + 1] if k + 1 < len(marks) else len(nodes),
+                  g.dispatch[nm])
+                 for k, (_i, nm) in enumerate(flow_labels)]
+        for a, b, tag in segs:
+            g.lines.append("        '%s' {" % tag)
+            for j in range(a, min(b, len(nodes))):
+                if nodes[j][0] == 'label' or _in_sub(j):
+                    continue
+                g.emit_node(nodes[j], 3)
+            nxt = next((g.dispatch[nm] for li, nm in flow_labels if li == b),
+                       None)
+            if nxt:
+                g.lines.append("            $__pc = '%s'; continue __loop"
+                               % nxt)
+            else:
+                g.lines.append('            break __loop')
+            g.lines.append('        }')
+        g.lines += ['    }', '}']
+        head += g.lines
+        g.lines = []
+    else:
+        for i, n in indexed:
+            if n[0] == 'label' or _in_sub(i):
+                continue
+            g.emit_node(n, 0)
 
     script = '\n'.join(head + g.lines).rstrip() + '\n'
     return script, g.stats['fallback']

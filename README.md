@@ -10,7 +10,7 @@
 [CLI reference](#command-line-usage) · [GUI](#graphical-interface) ·
 [Examples](#examples) · [How it works](#how-it-works) ·
 [Limitations](#limitations) · [Security](SECURITY.md) ·
-[Wiki (RU)](https://github.com/codzal/bat2sh/wiki)
+[Wiki](https://github.com/codzal/bat2sh/wiki)
 
 `bat2sh` translates Windows batch (`.bat` / `.cmd`) scripts into POSIX
 `bash` scripts. It is a best-effort, block-oriented translator that handles
@@ -176,6 +176,9 @@ keyboard shortcuts (`Ctrl+O`, `Ctrl+S`, `Ctrl+C`, `F5`) are provided.
 The UI language can be switched in the **Language** menu - English is
 built in, further languages ship as editable `languages/<code>.txt`
 packs (e.g. `languages/ru.txt`).
+
+> ⚠️ Non-English UI packs are community translations and may be incomplete.
+> English is the reference language. The **wiki** is maintained in English only.
 
 ---
 

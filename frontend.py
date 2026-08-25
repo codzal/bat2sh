@@ -76,6 +76,29 @@ STRINGS = {
         'noclobber': "Don't overwrite existing (-C)",
         'quiet': 'Quiet (-q)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
         'ready': 'Ready.', 'preview': 'Generated shell script',
+        'target': 'Target:',
+        'preset_bash': 'Pure Bash', 'preset_wsl': 'WSL',
+        'preset_wine': 'Wine-friendly',
+        'strict': 'set -euo pipefail',
+        'beta': '[beta] translations other than English may be incomplete',
+        'choose_input': 'Please choose an input file or folder.',
+        'input_missing': 'Input not found: %s',
+        'no_bat': 'No .bat/.cmd files found in folder.',
+        'processed': 'Processed %d file(s).',
+        'wrote': 'Wrote %s', 'skipped': 'Skipped %s (exists).',
+        'syntax_ok': 'Syntax OK', 'syntax_fail': 'Syntax FAIL',
+        'preview_ready': 'Preview ready (not written to disk).',
+        'copied': 'Script copied to clipboard.',
+        'nothing_to_save': 'Nothing to save yet.',
+        'saved': 'Saved %s',
+        'write_err': 'Write error: %s', 'save_err': 'Save error: %s',
+        'conv_err': 'Conversion error: %s',
+        'dlg_open_file': 'Open Batch File',
+        'dlg_open_dir': 'Open Batch Folder',
+        'dlg_save_as': 'Save Shell Script As',
+        'dlg_outdir': 'Select Output Directory',
+        'ft_batch': 'Batch files', 'ft_shell': 'Shell script',
+        'ft_all': 'All files',
     }
 }
 
@@ -125,7 +148,7 @@ class Bat2ShGUI(tk.Tk):
         self.noclobber_var = tk.BooleanVar(value=False)
         self.quiet_var = tk.BooleanVar(value=False)
         self.encoding_var = tk.StringVar(value='auto')
-        self.preset_var = tk.StringVar(value='wsl')
+        self.preset_var = tk.StringVar(value='bash')
 
         self._build_widgets()
         self._layout()
@@ -246,14 +269,24 @@ class Bat2ShGUI(tk.Tk):
                                       values=ENCODINGS, width=12,
                                       state='readonly')
 
-        self.preset_lbl = ttk.Label(self.opt_frame, text='Target:')
-        for val, lbl in (('bash', 'Pure Bash'), ('wsl', 'WSL'),
-                         ('wine', 'Wine-friendly')):
+        self.preset_lbl = ttk.Label(self.opt_frame,
+                                    text=self._t('target'))
+        for val in ('bash', 'wsl', 'wine'):
             rb = ttk.Radiobutton(self.opt_frame, value=val,
-                                 variable=self.preset_var, text=lbl)
+                                 variable=self.preset_var,
+                                 text=self._t('preset_' + val),
+                                 command=self._apply_preset)
             setattr(self, 'preset_' + val, rb)
+
+    def _apply_preset(self):
+        style = {'bash': 'root', 'wsl': 'wsl', 'wine': 'wine'}[
+            self.preset_var.get()]
+        try:
+            bat2sh.shell.set_path_style(style)
+        except Exception:
+            pass
         self.strict_btn = ttk.Checkbutton(
-            self.opt_frame, text='set -euo pipefail',
+            self.opt_frame, text=self._t('strict'),
             variable=tk.BooleanVar(value=False))
 
         self.check_btn = ttk.Checkbutton(
@@ -279,7 +312,8 @@ class Bat2ShGUI(tk.Tk):
                                         mode='determinate', maximum=100)
 
         self.status_lbl = ttk.Label(
-            self, text=self._t('ready') + '  [beta]', anchor='w')
+            self, text=self._t('ready') + '  ' + self._t('beta'),
+                                    anchor='w')
 
         self.preview_frame = ttk.LabelFrame(
             self, text=self._t('preview'))
@@ -453,15 +487,16 @@ class Bat2ShGUI(tk.Tk):
     # browse actions
     def _browse_file(self):
         path = filedialog.askopenfilename(
-            title='Open Batch File',
-            filetypes=[('Batch files', '*.bat *.cmd'), ('All files', '*.*')])
+            title=self._t('dlg_open_file'),
+            filetypes=[(self._t('ft_batch'), '*.bat *.cmd'),
+                       (self._t('ft_all'), '*.*')])
         if path:
             self.inp_var.set(path)
             self.out_mode.set('inplace')
             self._sync_output_state()
 
     def _browse_dir(self):
-        path = filedialog.askdirectory(title='Open Batch Folder')
+        path = filedialog.askdirectory(title=self._t('dlg_open_dir'))
         if path:
             self.inp_var.set(path)
             self.out_mode.set('inplace')
@@ -469,13 +504,14 @@ class Bat2ShGUI(tk.Tk):
 
     def _browse_out(self):
         path = filedialog.asksaveasfilename(
-            title='Save Shell Script As', defaultextension='.sh',
-            filetypes=[('Shell script', '*.sh'), ('All files', '*.*')])
+            title=self._t('dlg_save_as'), defaultextension='.sh',
+            filetypes=[(self._t('ft_shell'), '*.sh'),
+                       (self._t('ft_all'), '*.*')])
         if path:
             self.out_var.set(path)
 
     def _browse_outdir(self):
-        path = filedialog.askdirectory(title='Select Output Directory')
+        path = filedialog.askdirectory(title=self._t('dlg_outdir'))
         if path:
             self.outdir_var.set(path)
 
@@ -496,10 +532,10 @@ class Bat2ShGUI(tk.Tk):
     def _convert(self):
         inp = self.inp_var.get().strip()
         if not inp:
-            self._status('Please choose an input file or folder.', error=True)
+            self._status(self._t('choose_input'), error=True)
             return
         if not (inp == '-' or os.path.isfile(inp) or os.path.isdir(inp)):
-            self._status('Input not found: %s' % inp, error=True)
+            self._status(self._t('input_missing') % inp, error=True)
             return
         if os.path.isdir(inp):
             self._convert_folder(inp)
@@ -511,7 +547,7 @@ class Bat2ShGUI(tk.Tk):
             data = self._read(inp)
             sh = Translator().convert(data, clean=self.clean_var.get())
         except Exception as e:  # noqa: BLE001
-            self._status('Conversion error: %s' % e, error=True)
+            self._status(self._t('conv_err') % e, error=True)
             self._set_preview('')
             return
 
@@ -519,13 +555,14 @@ class Bat2ShGUI(tk.Tk):
             ok, err = self._bash_check(sh)
             text = sh + ('\n\n--- bash -n errors ---\n' + err if not ok else '')
             self._set_preview(text)
-            self._status('Syntax %s' % ('OK' if ok else 'FAIL'), error=not ok)
+            ok_txt = self._t('syntax_ok') if ok else self._t('syntax_fail')
+            self._status(ok_txt, error=not ok)
             return
 
         mode = self.out_mode.get()
         if mode == 'stdout':
             self._set_preview(sh, data)
-            self._status('Preview ready (not written to disk).')
+            self._status(self._t('preview_ready'))
             return
 
         dst = self._build_dst(inp)
@@ -535,15 +572,15 @@ class Bat2ShGUI(tk.Tk):
             return
         if self.noclobber_var.get() and os.path.exists(dst):
             self._set_preview(sh)
-            self._status('Skipped %s (already exists).' % dst)
+            self._status(self._t('skipped') % dst)
             return
         try:
             self._write(dst, sh)
         except OSError as e:
-            self._status('Write error: %s' % e, error=True)
+            self._status(self._t('write_err') % e, error=True)
             return
         self._set_preview(sh, data)
-        self._status('Wrote %s' % dst)
+        self._status(self._t('wrote') % dst)
 
     def _convert_folder(self, folder):
         files = []
@@ -552,7 +589,7 @@ class Bat2ShGUI(tk.Tk):
                 if fn.lower().endswith(('.bat', '.cmd')):
                     files.append(os.path.join(root, fn))
         if not files:
-            self._status('No .bat/.cmd files found in folder.', error=True)
+            self._status(self._t('no_bat'), error=True)
             return
 
         mode = self.out_mode.get()
@@ -597,7 +634,7 @@ class Bat2ShGUI(tk.Tk):
             self.progress['value'] = i
             self.update_idletasks()
         self._set_preview('\n'.join(lines))
-        self._status('Processed %d file(s).' % len(files))
+        self._status(self._t('processed') % len(files))
 
     # clipboard and save
     def _copy(self):
@@ -605,16 +642,17 @@ class Bat2ShGUI(tk.Tk):
         if text.strip():
             self.clipboard_clear()
             self.clipboard_append(text)
-            self._status('Script copied to clipboard.')
+            self._status(self._t('copied'))
 
     def _save_as(self):
         text = self.preview.get('1.0', tk.END)
         if not text.strip():
-            self._status('Nothing to save yet.', error=True)
+            self._status(self._t('nothing_to_save'), error=True)
             return
         path = filedialog.asksaveasfilename(
-            title='Save Shell Script As', defaultextension='.sh',
-            filetypes=[('Shell script', '*.sh'), ('All files', '*.*')])
+            title=self._t('dlg_save_as'), defaultextension='.sh',
+            filetypes=[(self._t('ft_shell'), '*.sh'),
+                       (self._t('ft_all'), '*.*')])
         if path:
             try:
                 with open(path, 'w', encoding='utf-8') as f:
@@ -623,9 +661,9 @@ class Bat2ShGUI(tk.Tk):
                     os.chmod(path, 0o755)
                 except OSError:
                     pass
-                self._status('Saved %s' % path)
+                self._status(self._t('saved') % path)
             except OSError as e:
-                self._status('Save error: %s' % e, error=True)
+                self._status(self._t('save_err') % e, error=True)
 
 
 def main():

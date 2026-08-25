@@ -1,5 +1,6 @@
 # scripts/
 
-Вспомогательные скрипты разработки:
-* `sync_wiki.sh [DIR]` — зеркалирует `docs/wiki/*.md` в GitHub Wiki.
-Требует однажды инициализированную вики-страницу на GitHub.
+Development helpers:
+
+* `sync_wiki.sh [DIR]` - mirrors `docs/wiki/*.md` into the GitHub Wiki.
+The wiki page must exist on GitHub once before the first run.

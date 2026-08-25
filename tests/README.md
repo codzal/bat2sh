@@ -1,13 +1,15 @@
 # tests/
 
-`snapshot.sh` + `expected/*.sh` — golden-тесты: конвертируем все примеры
-и сравниваем побайтно с эталонами.
+`snapshot.sh` + `expected/*.sh` - golden tests: every example is converted
+and compared byte-for-byte with its baseline.
 
-⚠️ Если вы **намеренно** изменили поведение транслятора — перегенерируйте
-baseline и приложите к тому же PR:
+If you *intentionally* change translator behavior, regenerate the affected
+baselines and include them in the same PR:
+
 ```bash
 for f in ../examples/*/*.bat; do
   python3 -m bat2sh "$f" > "expected/$(basename "${f%.bat}").sh"
 done
 ```
-Случайное расхождение = регрессия, CI не пустит.
+
+An unexpected diff means a regression - CI will reject it.

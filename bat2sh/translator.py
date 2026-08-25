@@ -533,9 +533,14 @@ class Translator:
             if neg:
                 test = '[ "$ERRORLEVEL" -lt %d ]' % cond
         elif ctype == 'defined':
-            test = '[[ -n "${%s+x}" ]]' % cond
+            exp = expand_vars(cond)
+            if '%' in exp or '$' in exp:
+                # dynamic name: resolve through an indirect reference
+                test = '_def_ref="%s"; [ -n "${!_def_ref:+x}" ]' % exp
+            else:
+                test = '[[ -n "${%s+x}" ]]' % exp
             if neg:
-                test = '[[ -z "${%s+x}" ]]' % cond
+                test = test.replace(' -n ', ' -z ')
         elif ctype == 'exist':
             test = '[[ -e "%s" ]]' % winpath(expand_vars(cond))
             if neg:

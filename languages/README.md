@@ -1,9 +1,10 @@
-# languages/ — языковые пакеты GUI
+# languages/ - GUI language packs
 
-Формат: `key=value`, комментарии `#`, первая строка `name=Название`.
+Format: `key=value`, `#` comments allowed, optional first line
+`name=Native Name`.
 
-Чтобы добавить язык: скопируйте `ru.txt` → `<код>.txt`, переведите значения,
-ключи не меняйте. Отсутствующий ключ откатывается на английский.
+To add a language copy `ru.txt` to `<code>.txt`, translate the values,
+keep the keys. A missing key falls back to English.
 
-⚠️ Переводы, кроме встроенного английского, могут быть неполными —
-эталон — значения из `frontend.py` (STRINGS['en']).
+Warning: translations other than the built-in English may be incomplete -
+the reference values live in `frontend.py` (`STRINGS['en']`).

@@ -210,7 +210,8 @@ class Parser:
                 cond = (m.group(1), m.group(2).lower(), m.group(3))
                 consumed = len(m.group(0))
         if ctype is None:
-            m = re.match(r'defined\s+([A-Za-z_]\w*)', rest, re.IGNORECASE)
+            m = re.match(r'defined\s+(%%?[A-Za-z]\w*|[A-Za-z_][\w.!%$]*)',
+                         rest, re.IGNORECASE)
             if m:
                 ctype = 'defined'; cond = m.group(1); consumed = len(m.group(0))
         if ctype is None:

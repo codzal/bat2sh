@@ -82,7 +82,6 @@ STRINGS = {
         'out_file': 'Choose file:', 'out_outdir': 'Output directory:',
         'out_stdout': 'Preview only (do not write)',
         'encoding': 'Encoding:', 'chk': 'Syntax-check only (-c)',
-        'clean': 'Clean output (-n)',
         'noclobber': "Don't overwrite existing (-C)",
         'debug': 'Keep debug comments (--debug)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
         'ready': 'Ready.', 'preview': 'Generated shell script',
@@ -160,7 +159,6 @@ class Bat2ShGUI(_BASE):
         self.out_var = tk.StringVar()
         self.outdir_var = tk.StringVar()
         self.check_var = tk.BooleanVar(value=False)
-        self.clean_var = tk.BooleanVar(value=False)
         self.noclobber_var = tk.BooleanVar(value=False)
         self.debug_var = tk.BooleanVar(value=False)
         self.encoding_var = tk.StringVar(value='auto')
@@ -193,7 +191,6 @@ class Bat2ShGUI(_BASE):
         self.radio_stdout.configure(text=t('out_stdout'))
         self.enc_lbl.configure(text=t('encoding'))
         self.check_btn.configure(text=t('chk'))
-        self.clean_btn.configure(text=t('clean'))
         self.noclobber_btn.configure(text=t('noclobber'))
         self.debug_btn.configure(text=t('debug'))
         self.convert_btn.configure(text=t('convert'))
@@ -305,9 +302,6 @@ class Bat2ShGUI(_BASE):
         self.check_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('chk'),
             variable=self.check_var)
-        self.clean_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('clean'),
-            variable=self.clean_var)
         self.noclobber_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('noclobber'),
             variable=self.noclobber_var)
@@ -340,25 +334,25 @@ class Bat2ShGUI(_BASE):
         self.pane.add(self.orig, width=280)
         self.pane.add(self.preview)
         self.orig.configure(state=tk.DISABLED)
-        self._orig_yview = self.orig.yview
-        self.orig['yscrollcommand'] = lambda f, t: (
-            self.preview.yview_moveto(f) if not getattr(
-                self, '_syncing', False) else None)
-        self.preview['yscrollcommand'] = self._sync_scroll
+        self._sync_lock = False
+        self.orig['yscrollcommand'] = (
+            lambda f, l: self._mirror(self.preview, f))
+        self.preview['yscrollcommand'] = (
+            lambda f, l: self._mirror(self.orig, f))
         for wdg in (self.orig, self.preview):
             wdg.tag_configure('kw', foreground='#2a6fdb')
             wdg.tag_configure('str', foreground='#b0560f')
             wdg.tag_configure('com', foreground='#3d8f3d')
 
-    def _sync_scroll(self, first, last):
-        if getattr(self, '_syncing', False):
+    def _mirror(self, other, first):
+        """Mirror scroll position without feedback loops."""
+        if self._sync_lock:
             return
-        self._syncing = True
+        self._sync_lock = True
         try:
-            self.orig.yview_moveto(first)
-            self.preview.yview_moveto(first)
+            other.yview_moveto(first)
         finally:
-            self._syncing = False
+            self._sync_lock = False
 
     @staticmethod
     def _highlight(widget, kind):
@@ -403,7 +397,6 @@ class Bat2ShGUI(_BASE):
         self.enc_lbl.grid(row=0, column=4, sticky='e', padx=6, pady=2)
         self.enc_combo.grid(row=0, column=5, sticky='w', padx=4, pady=2)
         self.check_btn.grid(row=4, column=0, columnspan=2, sticky='w', **pad)
-        self.clean_btn.grid(row=4, column=2, columnspan=2, sticky='w', **pad)
         self.noclobber_btn.grid(row=5, column=0, columnspan=2, sticky='w', **pad)
         self.debug_btn.grid(row=5, column=2, columnspan=2, sticky='w', **pad)
         self.preset_lbl.grid(row=6, column=0, sticky='w', padx=6, pady=2)
@@ -643,7 +636,7 @@ class Bat2ShGUI(_BASE):
         for i, src in enumerate(files, 1):
             try:
                 sh = Translator().convert(self._read(src),
-                                          clean=self.clean_var.get())
+                                          clean=not self.debug_var.get())
             except Exception as e:  # noqa: BLE001
                 lines.append('%s : ERROR %s' % (src, e))
                 continue

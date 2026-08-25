@@ -1,12 +1,11 @@
 # docs/
 
-`wiki/*.md` — исходники GitHub Wiki проекта (**только английский**;
-русская документация для пользователей живёт в README_RU.md).
+`wiki/*.md` are the sources of the project's GitHub Wiki (English only).
 
-Синхронизация с вики после правок:
+Sync after editing:
 ```bash
 bash scripts/sync_wiki.sh
 ```
 
-⚠️ Не редактируйте страницы прямо на GitHub — следующая синхронизация
-перезапишет их содержимым из этой папки.
+Warning: do not edit wiki pages directly on GitHub - the next sync will
+overwrite them with the contents of this folder.

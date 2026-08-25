@@ -1,4 +1,4 @@
-# PowerShell Target (beta)
+# PowerShell Target beta
 
 `--target=ps1` enables `bat2sh/ps1.py`. Line-based subset:
 

@@ -17,7 +17,7 @@ PowerShell).
 
 * [[Architecture]]
 * [[Runtime Layer and Helpers]]
-* [[PowerShell Target (beta)]]
+* [[PowerShell Target beta]]
 * [[Language Packs]]
 * [[Tests and CI]]
 

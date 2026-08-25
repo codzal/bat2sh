@@ -56,12 +56,12 @@ ENCODINGS = ['auto', 'utf-8', 'utf-8-sig', 'cp1251', 'cp1252',
 
 STRINGS = {
     'en': {
+        'name': 'English',
         'file': 'File', 'open_file': 'Open File…',
         'open_dir': 'Open Folder…', 'save_as': 'Save Script As…',
         'quit': 'Quit', 'edit': 'Edit', 'copy': 'Copy Script',
         'run': 'Run', 'convert': 'Convert', 'help': 'Help',
         'about': 'About',
-        'lang_menu': 'Language',
         'input': 'Input .bat / .cmd file or folder:',
         'browse_file': 'Browse File…', 'browse_dir': 'Browse Folder…',
         'options': 'Options', 'output': 'Output:',
@@ -189,7 +189,7 @@ class Bat2ShGUI(tk.Tk):
             langmenu.add_command(
                 label=('• %s' % label if code == self.lang else label),
                 command=lambda c=code: self._set_lang(c))
-        menubar.add_cascade(label=t('lang_menu'), menu=langmenu)
+        menubar.add_cascade(label='Language', menu=langmenu)
         helpmenu = tk.Menu(menubar, tearoff=0)
         helpmenu.add_command(label=t('about'), command=self._about)
         menubar.add_cascade(label=t('help'), menu=helpmenu)

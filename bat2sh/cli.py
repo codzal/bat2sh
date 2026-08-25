@@ -146,6 +146,9 @@ def _argparser():
                          'directories; for a single file places <name>.sh there)')
     ap.add_argument('-c', '--check', action='store_true',
                     help='Only syntax-check the converted output (no files written)')
+    ap.add_argument('-r', '--run', action='store_true',
+                    help='Convert and execute immediately via bash '
+                         '(nothing is written to disk)')
     ap.add_argument('-n', '--no-debug', action='store_true',
                     help='Strip converter-injected comments/placeholders; keep only '
                          'comments present in the original batch file')
@@ -170,11 +173,21 @@ def _process_job(args, src, out):
         with open(src, 'rb') as f:
             text = decode_text(f.read(), encoding=args.encoding)
         name = src
+        syn = ('# bat2sh: untranslatable input\n'
+               "echo 'The syntax of the command is incorrect.' >&2\n"
+               'exit 1\n')
     try:
         result = Translator().convert(text, clean=args.no_debug)
-    except Exception as e:  # noqa: BLE001
-        return 1, None, ['FAIL  %s' % name,
-                         'conversion error: %s' % e]
+    except Exception:  # noqa: BLE001
+        # mimic cmd.exe instead of crashing the whole conversion
+        if args.check:
+            return 1, None, ['FAIL  %s' % name,
+                             'conversion error: bad batch syntax']
+        result = syn
+
+    if args.run:
+        # convert -> execute; the script's exit code becomes ours
+        return _run_script(result), None, []
 
     if args.check:
         ok, errout = syntax_check(result)
@@ -213,10 +226,10 @@ def main(argv=None):
         text = sys.stdin.read()
         try:
             result = Translator().convert(text, clean=args.no_debug)
-        except Exception as e:  # noqa: BLE001
-            print('FAIL  <stdin>')
-            sys.stderr.write('conversion error: %s\n' % e)
-            return 1
+        except Exception:  # noqa: BLE001
+            result = ('# bat2sh: untranslatable input\n'
+                      "echo 'The syntax of the command is incorrect.' >&2\n"
+                      'exit 1\n')
         return _run_script(result)
 
     if args.input is not None and args.input != '-' and \
@@ -226,10 +239,10 @@ def main(argv=None):
         text = args.input
         try:
             result = Translator().convert(text, clean=args.no_debug)
-        except Exception as e:  # noqa: BLE001
-            print('FAIL  <inline>')
-            sys.stderr.write('conversion error: %s\n' % e)
-            return 1
+        except Exception:  # noqa: BLE001
+            result = ('# bat2sh: untranslatable input\n'
+                      "echo 'The syntax of the command is incorrect.' >&2\n"
+                      'exit 1\n')
         if args.output:
             with open(args.output, 'w', encoding='utf-8') as f:
                 f.write(result)
@@ -247,7 +260,8 @@ def main(argv=None):
         return 1
 
     # streaming modes stay sequential; batch file jobs run in parallel
-    parallel = len(jobs) > 1 and (args.check or all(out for _s, out in jobs))
+    parallel = len(jobs) > 1 and not args.run and \
+        (args.check or all(out for _s, out in jobs))
 
     def run_all(worker):
         rc = 0

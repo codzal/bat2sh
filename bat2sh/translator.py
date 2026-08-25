@@ -189,8 +189,9 @@ class Translator:
 
     def cmd_exit(self, args):
         a = args.strip()
-        if re.match(r'/b(\s|$)', a, re.IGNORECASE):
-            return self._emit_eof()
+        mb = re.match(r'/b\s*(\d+)?\s*$', a, re.IGNORECASE)
+        if mb:
+            return self._emit_eof(int(mb.group(1)) if mb.group(1) else None)
         if a == '':
             return 'exit'
         return 'exit ' + expand_vars(a)
@@ -297,9 +298,11 @@ class Translator:
             return '"%s"%s' % (prog, rest)
         return expand_vars(a)
 
-    def _emit_eof(self):
+    def _emit_eof(self, code=None):
         sep = r"$'\x1f'"
-        return ('if [ ${#CALL_STACK[@]} -gt 0 ]; then '
+        setlvl = 'ERRORLEVEL=%d; ' % int(code) if code is not None else ''
+        return (setlvl +
+                'if [ ${#CALL_STACK[@]} -gt 0 ]; then '
                 'PC="${CALL_STACK[-1]}"; unset "CALL_STACK[-1]"; '
                 'if [ ${#ARGS_STACK[@]} -gt 0 ]; then '
                 'IFS=%s read -ra ARGS <<<"${ARGS_STACK[-1]}"; unset "ARGS_STACK[-1]"; fi; '
@@ -754,6 +757,7 @@ run() {
 }
 
 run
+exit $ERRORLEVEL
 '''
         extras = func_defs
         if self._need_ci:

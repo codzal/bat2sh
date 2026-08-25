@@ -73,7 +73,8 @@ class Translator:
                 return self._emit_eof()
             t = self.label_map.get(tgt.upper())
             if t is None:
-                return '# ERROR: undefined label %s' % tgt
+                return ('{ echo "The system cannot find the batch label '
+                        'specified - %s" >&2; PC=-1; }' % tgt)
             return 'PC=%d; return' % t
 
         h = self._cmd.get(lcmd)
@@ -348,7 +349,8 @@ class Translator:
         if t == 'goto':
             tgt = self.label_map.get(node[1].upper())
             if tgt is None:
-                return ['# ERROR: undefined label %s' % node[1]]
+                return ['{ echo "The system cannot find the batch label '
+                        'specified - %s" >&2; PC=-1; }' % node[1]]
             return ['PC=%d; return' % tgt]
         if t == 'goto_eof':
             return [self._emit_eof()]
@@ -356,7 +358,9 @@ class Translator:
             sub = node[1].upper()
             tgt = self.label_map.get(sub)
             if tgt is None:
-                return ['# ERROR: undefined label %s' % node[1]]
+                # cmd prints this and keeps running with errorlevel 1
+                return ['{ echo "The system cannot find the batch label '
+                        'specified - %s" >&2; ERRORLEVEL=1; false; }' % sub]
             args = expand_vars(node[2])
             if sub in self.func_names:
                 # plain function call: safe inside loops and if-blocks
@@ -679,9 +683,12 @@ class Translator:
         for i, n in indexed:
             nxt = i + 1
             body = self.emit_node(n, i, nxt)
-            if n[0] in ('goto', 'goto_eof') or (
-                    n[0] == 'call_sub'
-                    and n[1].upper() not in self.func_names):
+            # only DEFINED pc-mode calls jump without advancing; an
+            # undefined call must fall through or the arm loops forever
+            is_jump = n[0] in ('goto', 'goto_eof') or (
+                n[0] == 'call_sub' and n[1].upper() in self.label_map
+                and n[1].upper() not in self.func_names)
+            if is_jump:
                 arm_body = body
             else:
                 arm_body = body + ['PC=%d' % nxt]
@@ -699,6 +706,14 @@ ARGS_STACK=()
 ARGS=("$@")
 ERRORLEVEL=0
 PC=0
+
+# cmd.exe-style diagnostics for unknown commands
+command_not_found_handle() {
+    printf "'%s' is not recognized as an internal or external command,\\n" "$1" >&2
+    echo "operable program or batch file." >&2
+    ERRORLEVEL=9009
+    return 9009
+}
 
 # choice: emulate the batch CHOICE command
 choice() {

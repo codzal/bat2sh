@@ -69,6 +69,12 @@ python3 frontend.py
   обратные слэши заменяются на прямые.
 * **Надёжный ввод** — файлы UTF-8 (с BOM и без) и UTF-16 декодируются
   автоматически.
+* **Диагностика как в cmd.exe** — неизвестные команды печатают
+  `'x' is not recognized as an internal or external command…`, отсутствующие
+  метки сообщают `The system cannot find the batch label specified - X`
+  (`goto` останавливает скрипт, `call` продолжает), а при запуске без
+  терминала (например, из Dolphin) ошибки показываются диалоговыми окнами
+  вместо stderr.
 
 ---
 

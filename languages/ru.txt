@@ -10,7 +10,6 @@ run=Запуск
 convert=Конвертировать
 help=Справка
 about=О программе
-lang_menu=Язык / Language
 input=Входной .bat/.cmd файл или папка:
 browse_file=Выбрать файл…
 browse_dir=Выбрать папку…

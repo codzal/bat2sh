@@ -228,19 +228,20 @@ This faithfully models `goto`, including jumps that leave `for`/`if` blocks
 
 ## Limitations
 
-`bat2sh` is a translator, not an emulator. Known caveats:
+bat2sh is a translator, not an emulator. Known caveats:
 
 * `errorlevel` reflects the status of the **last executed command**, exactly
-  as in batch; if a command such as `echo` runs between the command and an
-  `if errorlevel` test, the value is reset (this matches real `cmd.exe`).
-* `start` strips its switches/title and runs the program in the background
-  (`nohup … &`) - there is no console/session concept in POSIX.
-* `color`, `mode`, `chcp` and a few other console-only commands are no-ops.
-* The command source of `for /f '…'` is executed as a shell command with
-  variables pre-expanded; batch-only syntax inside it is not re-parsed.
-  `cmd /c other.bat` invokes the converted `other.sh` sibling.
+  as in batch (this matches real `cmd.exe`).
+* `start` strips switches/title and backgrounds the process (`nohup ... &`);
+  POSIX has no console/session concept.
+* `color` sets ANSI text color only; `mode`, `chcp` and a few console-only
+  commands are no-ops.
+* The command source of `for /f '...'` executes as a shell command;
+  batch-only syntax inside is not re-parsed.
 * Computed variable names (`!prefix_%%i!`) and dynamic call labels
-  (`call :!name!`) have no direct bash equivalent and stay untranslatable.
+  (`call :!name!`) have no direct bash equivalent.
+* The PowerShell target covers a basic subset and is marked beta.
+* GUI translations other than English may be incomplete.
 
 Patches and example batch files that expose missing behaviour are welcome.
 

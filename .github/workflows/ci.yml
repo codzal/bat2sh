@@ -24,6 +24,15 @@ jobs:
           pip install pyflakes
           python3 -m pyflakes bat2sh/*.py frontend.py
 
+      - name: GUI import smoke (headless)
+        run: |
+          python3 -c "
+          import frontend
+          assert 'tip_strict' in frontend.STRINGS['en']
+          assert frontend._load_langs()['ru'].get('tip_debug')
+          assert frontend.ToolTip is not None
+          print('frontend import OK')"
+
   test:
     needs: lint
     runs-on: ubuntu-latest

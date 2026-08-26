@@ -278,6 +278,7 @@ class Bat2ShGUI(_BASE):
         self.rlayer_var = tk.BooleanVar(value=False)
         self.quiet_var = tk.BooleanVar(value=False)
         self.shebang_var = tk.StringVar()
+        self._cascades = []          # filled by _build_menubar
 
         fixed = tkfont.nametofont('TkFixedFont')
         fixed.configure(size=10)
@@ -320,6 +321,17 @@ class Bat2ShGUI(_BASE):
         self.preview_frame.configure(text=t('preview'))
         self.status_lbl.configure(text=t('ready'))
         self.config(menu=self._build_menubar())
+        # never leave a hint floating over other applications
+        self.bind('<Deactivate>', lambda _e: ToolTip.hide_all())
+        for cascade in self._cascades:
+            old_post = cascade.cget('postcommand')
+
+            def guarded(_old=old_post):
+                ToolTip.hide_all()
+                if _old:
+                    self.tk.call(_old)
+
+            cascade.configure(postcommand=guarded)
 
     def _set_lang(self, lang):
         self.lang = lang
@@ -501,15 +513,6 @@ class Bat2ShGUI(_BASE):
             (self.debug_btn, 'tip_debug'),
         ):
             ToolTip(wdg, lambda k=key: self._t(k))
-        # never leave a hint floating over other applications
-        self.bind('<Deactivate>', lambda _e: ToolTip.hide_all())
-        for cascade in self._cascades:
-            old_post = cascade.cget('postcommand')
-            def guarded(_old=old_post):
-                ToolTip.hide_all()
-                if _old:
-                    self.tk.call(_old)
-            cascade.configure(postcommand=guarded)
 
     def _mirror(self, other, first):
         """Mirror scroll position without feedback loops."""

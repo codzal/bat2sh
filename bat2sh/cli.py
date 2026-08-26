@@ -321,6 +321,9 @@ def _process_job(args, src, out):
         findings = summarize(analyze(text))
         _REPORT.append((name, stats, findings))
     except Exception:
+        import traceback, os as _os
+        if _os.environ.get('BAT2SH_DEBUG'):
+            traceback.print_exc()
         if args.check:
             return 1, None, ['FAIL  %s' % name,
                              'conversion error: bad batch syntax']

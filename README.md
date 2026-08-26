@@ -142,8 +142,9 @@ python3 frontend.py
 It offers file/folder selection (with drag & drop when `tkinterdnd2` is
 installed), output options (next-to-input, choose file, output directory,
 or preview-only), a *syntax-check only* mode, target language and path
-presets, run-after-convert, audit mode, runtime layer, shebang override
-and quiet mode. Less obvious controls explain themselves on hover.
+presets, a one-click Run button that executes the conversion in memory
+(no file is written), audit mode, runtime layer and shebang override.
+Less obvious controls explain themselves on hover.
 A live dual-pane preview with synchronized scrolling, copy-to-clipboard,
 *Save As…* and an encoding selector are included. A menu bar
 (File / Edit / Run / Help) and keyboard shortcuts (`Ctrl+O`, `Ctrl+S`,

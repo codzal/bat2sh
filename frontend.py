@@ -76,7 +76,7 @@ STRINGS = {
         'file': 'File', 'open_file': 'Open File…',
         'open_dir': 'Open Folder…', 'save_as': 'Save Script As…',
         'quit': 'Quit', 'edit': 'Edit', 'copy': 'Copy Script',
-        'run': 'Run', 'convert': 'Convert', 'help': 'Help',
+        'run': 'Run', 'convert': 'Convert', 'run_now': 'Run', 'help': 'Help',
         'about': 'About',
         'input': 'Input .bat / .cmd file or folder:',
         'browse_file': 'Browse File…', 'browse_dir': 'Browse Folder…',
@@ -93,10 +93,8 @@ STRINGS = {
         'preset_wine': 'Wine-friendly',
         'strict': 'set -euo pipefail',
         'out_lang': 'Script language:',
-        'run_after': 'Run after convert (-r)',
         'audit': 'Audit (--analyze)',
         'rlayer': 'Runtime layer',
-        'quiet_opt': 'Quiet (-q)',
         'shebang': 'Shebang:',
         'ran_ok': 'Exited with code %d.',
         'ran_fail': 'Exit %d (see console).',
@@ -114,6 +112,12 @@ STRINGS = {
                          'instead of silently replacing it.',
         'tip_debug': 'Keep BAT2SH debug comments in the output. Off by '
                      'default - generated scripts are clean.',
+        'audit_clean': 'clean - no compatibility findings',
+        'tip_audit': 'Scan the batch source for Windows-only calls '
+                     '(registry, services, .exe binaries) before '
+                     'conversion. Report goes to the preview pane.',
+        'tip_run_now': 'Convert in memory and execute right away; the '
+                          'script itself is never written to disk.',
         'tip_target_ps1': 'Emit PowerShell 7 instead of bash. Beta: every '
                           'example converts parse-clean, coverage is still '
                           'smaller.',
@@ -273,10 +277,8 @@ class Bat2ShGUI(_BASE):
         self.preset_var = tk.StringVar(value='bash')
         self.target_var = tk.StringVar(value='bash')
         self.strict_var = tk.BooleanVar(value=False)
-        self.run_var = tk.BooleanVar(value=False)
         self.analyze_var = tk.BooleanVar(value=False)
         self.rlayer_var = tk.BooleanVar(value=False)
-        self.quiet_var = tk.BooleanVar(value=False)
         self.shebang_var = tk.StringVar()
         self._cascades = []          # filled by _build_menubar
 
@@ -308,10 +310,9 @@ class Bat2ShGUI(_BASE):
         self.enc_lbl.configure(text=t('encoding'))
         self.lang_lbl.configure(text=t('out_lang'))
         self.shebang_lbl.configure(text=t('shebang'))
-        self.run_btn.configure(text=t('run_after'))
+        self.runnow_btn.configure(text=t('run_now'))
         self.analyze_btn.configure(text=t('audit'))
         self.rlayer_btn.configure(text=t('rlayer'))
-        self.quiet_btn.configure(text=t('quiet_opt'))
         self.check_btn.configure(text=t('chk'))
         self.noclobber_btn.configure(text=t('noclobber'))
         self.debug_btn.configure(text=t('debug'))
@@ -359,6 +360,8 @@ class Bat2ShGUI(_BASE):
         runmenu = tk.Menu(menubar, tearoff=0)
         runmenu.add_command(label=t('convert'), accelerator='F5',
                             command=self._convert)
+        runmenu.add_command(label=t('run_now'), accelerator='Ctrl+R',
+                            command=self._run_now)
         menubar.add_cascade(label=t('run'), menu=runmenu)
         langmenu = tk.Menu(menubar, tearoff=0)
         for code, pack in sorted(LANGS.items()):
@@ -449,18 +452,12 @@ class Bat2ShGUI(_BASE):
                                          textvariable=self.target_var,
                                          values=('bash', 'ps1'), width=6,
                                          state='readonly')
-        self.run_btn = ttk.Checkbutton(self.opt_frame,
-                                       text=self._t('run_after'),
-                                       variable=self.run_var)
         self.analyze_btn = ttk.Checkbutton(self.opt_frame,
                                            text=self._t('audit'),
                                            variable=self.analyze_var)
         self.rlayer_btn = ttk.Checkbutton(self.opt_frame,
                                           text=self._t('rlayer'),
                                           variable=self.rlayer_var)
-        self.quiet_btn = ttk.Checkbutton(self.opt_frame,
-                                         text=self._t('quiet_opt'),
-                                         variable=self.quiet_var)
         self.shebang_lbl = ttk.Label(self.opt_frame,
                                      text=self._t('shebang'))
         self.shebang_entry = ttk.Entry(self.opt_frame,
@@ -469,6 +466,8 @@ class Bat2ShGUI(_BASE):
 
         self.convert_btn = ttk.Button(self, text=self._t('convert'),
                                       command=self._convert)
+        self.runnow_btn = ttk.Button(self, text=self._t('run_now'),
+                                     command=self._run_now)
         self.copy_btn = ttk.Button(self, text=self._t('copy_btn'),
                                    command=self._copy)
         self.save_btn = ttk.Button(self, text=self._t('save_btn'),
@@ -511,6 +510,7 @@ class Bat2ShGUI(_BASE):
             (self.check_btn, 'tip_check'),
             (self.noclobber_btn, 'tip_noclobber'),
             (self.debug_btn, 'tip_debug'),
+            (self.analyze_btn, 'tip_audit'),
         ):
             ToolTip(wdg, lambda k=key: self._t(k))
 
@@ -551,7 +551,7 @@ class Bat2ShGUI(_BASE):
         self.browse_file_btn.grid(row=0, column=2, sticky='e', **pad)
         self.browse_dir_btn.grid(row=0, column=3, sticky='e', **pad)
 
-        self.opt_frame.grid(row=1, column=0, columnspan=4, sticky='ew', **pad)
+        self.opt_frame.grid(row=1, column=0, columnspan=5, sticky='ew', **pad)
         self.out_lbl.grid(row=0, column=0, sticky='w', padx=6, pady=2)
         self.radio_inplace.grid(row=0, column=1, sticky='w', padx=6, pady=2)
         self.radio_file.grid(row=1, column=0, sticky='w', padx=6, pady=2)
@@ -562,7 +562,7 @@ class Bat2ShGUI(_BASE):
         self.outdir_entry.grid(row=2, column=1, columnspan=2, sticky='ew',
                                padx=4, pady=2)
         self.outdir_browse_btn.grid(row=2, column=3, padx=4, pady=2)
-        self.radio_stdout.grid(row=3, column=0, columnspan=4, sticky='w',
+        self.radio_stdout.grid(row=3, column=0, columnspan=5, sticky='w',
                                padx=6, pady=2)
         self.enc_lbl.grid(row=0, column=4, sticky='e', padx=6, pady=2)
         self.enc_combo.grid(row=0, column=5, sticky='w', padx=4, pady=2)
@@ -578,22 +578,21 @@ class Bat2ShGUI(_BASE):
         self.target_combo.grid(row=7, column=1, sticky='w', padx=4, pady=2)
         self.shebang_lbl.grid(row=7, column=2, sticky='e', padx=6, pady=2)
         self.shebang_entry.grid(row=7, column=3, sticky='ew', padx=4, pady=2)
-        self.run_btn.grid(row=8, column=0, sticky='w', **pad)
-        self.analyze_btn.grid(row=8, column=1, sticky='w', **pad)
-        self.rlayer_btn.grid(row=8, column=2, sticky='w', **pad)
-        self.quiet_btn.grid(row=8, column=3, sticky='w', **pad)
+        self.analyze_btn.grid(row=8, column=0, sticky='w', **pad)
+        self.rlayer_btn.grid(row=8, column=1, columnspan=3, sticky='w', **pad)
         for c in (1, 2):
             self.opt_frame.columnconfigure(c, weight=1)
         self.opt_frame.columnconfigure(5, weight=0)
 
         self.convert_btn.grid(row=2, column=0, sticky='w', **pad)
-        self.copy_btn.grid(row=2, column=1, sticky='w', **pad)
-        self.save_btn.grid(row=2, column=2, sticky='w', **pad)
-        self.progress.grid(row=2, column=3, sticky='ew', **pad)
+        self.runnow_btn.grid(row=2, column=1, sticky='w', **pad)
+        self.copy_btn.grid(row=2, column=2, sticky='w', **pad)
+        self.save_btn.grid(row=2, column=3, sticky='w', **pad)
+        self.progress.grid(row=2, column=4, sticky='ew', **pad)
 
-        self.status_lbl.grid(row=3, column=0, columnspan=4, sticky='ew', **pad)
+        self.status_lbl.grid(row=3, column=0, columnspan=5, sticky='ew', **pad)
 
-        self.preview_frame.grid(row=4, column=0, columnspan=4,
+        self.preview_frame.grid(row=4, column=0, columnspan=5,
                                 sticky='nsew', **pad)
         # the two text panes are managed by the PanedWindow itself
         self.pane.pack(fill=tk.BOTH, expand=True)
@@ -618,6 +617,7 @@ class Bat2ShGUI(_BASE):
         self.bind('<Control-s>', lambda e: self._save_as())
         self.bind('<Control-c>', lambda e: self._copy())
         self.bind('<Control-q>', lambda e: self.destroy())
+        self.bind('<Control-r>', lambda e: self._run_now())
         self.bind('<F5>', lambda e: self._convert())
 
     # helpers
@@ -789,17 +789,30 @@ class Bat2ShGUI(_BASE):
             self._set_preview('')
             return
 
-        if self.analyze_var.get() and not self.quiet_var.get():
+        # audit report for the preview pane; never mixed into saved output
+        audit_block = ''
+        if self.analyze_var.get():
             findings = summarize(analyze(data))
             if findings:
-                sh += '\n\n--- ' + self._t('audit') + ' ---\n' + findings
+                rows = '\n'.join(
+                    '  %s:%d [%s] %s\n      %s'
+                    % (f['severity'], f['line'], f['id'],
+                       f['message'], f['snippet'])
+                    for f in findings)
+                audit_block = ('\n\n--- %s (%d) ---\n%s'
+                               % (self._t('audit'), len(findings), rows))
+            else:
+                audit_block = ('\n\n--- %s ---\n  %s'
+                               % (self._t('audit'), self._t('audit_clean')))
 
         if self.check_var.get():
             if self.target_var.get() == 'ps1':
                 ok, err = self._pwsh_check(sh)
             else:
                 ok, err = self._bash_check(sh)
-            text = sh + ('\n\n--- errors ---\n' + err if not ok else '')
+            text = sh + audit_block
+            if not ok:
+                text += '\n\n--- errors ---\n' + err
             self._set_preview(text)
             ok_txt = self._t('syntax_ok') if ok else self._t('syntax_fail')
             self._status(ok_txt, error=not ok)
@@ -807,7 +820,7 @@ class Bat2ShGUI(_BASE):
 
         mode = self.out_mode.get()
         if mode == 'stdout':
-            self._set_preview(sh, data)
+            self._set_preview(sh + audit_block, data)
             self._status(self._t('preview_ready'))
             return
 
@@ -817,7 +830,7 @@ class Bat2ShGUI(_BASE):
                          error=True)
             return
         if self.noclobber_var.get() and os.path.exists(dst):
-            self._set_preview(sh)
+            self._set_preview(sh + audit_block)
             self._status(self._t('skipped') % dst)
             return
         try:
@@ -825,31 +838,57 @@ class Bat2ShGUI(_BASE):
         except OSError as e:
             self._status(self._t('write_err') % e, error=True)
             return
-        self._set_preview(sh, data)
-        if not self.quiet_var.get():
-            self._status(self._t('wrote') % dst)
-        if self.run_var.get():
-            self._execute(inp, dst)
+        self._set_preview(sh + audit_block, data)
+        self._status(self._t('wrote') % dst)
 
-    def _execute(self, inp, dst):
-        """-r equivalent: run the freshly written script in its folder."""
-        workdir = os.path.dirname(os.path.abspath(inp))
-        if self.target_var.get() == 'ps1':
-            cmd = ['pwsh', '-NoProfile', '-File', os.path.abspath(dst)]
-        else:
-            cmd = ['bash', os.path.abspath(dst)]
-        try:
-            proc = subprocess.run(cmd, cwd=workdir, timeout=60,
-                                  capture_output=True, text=True)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            self._status(str(e), error=True)
+    def _run_now(self):
+        """Run the current input converted in-memory; nothing is saved."""
+        inp = self.inp_var.get().strip()
+        if not inp or not (inp == '-' or os.path.isfile(inp)):
+            self._status(self._t('choose_input'), error=True)
             return
-        tail = (proc.stdout + proc.stderr).strip().splitlines()
-        if tail and not self.quiet_var.get():
-            self._status(tail[-1][:120])
-        ok = proc.returncode == 0
-        self._status(self._t('ran_ok' if ok else 'ran_fail')
-                     % proc.returncode, error=not ok)
+        if os.path.isdir(inp):
+            self._status(self._t('input_missing') % inp, error=True)
+            return
+        try:
+            data = self._read(inp)
+            if self.target_var.get() == 'ps1':
+                from bat2sh.ps1 import convert as ps1_convert
+                script, _fb = ps1_convert(data)
+                suffix, interpreter = '.ps1', ['pwsh', '-NoProfile', '-File']
+            else:
+                script = Translator().convert(
+                    data, clean=not self.debug_var.get(),
+                    shebang=self.shebang_var.get().strip() or None,
+                    strict=self.strict_var.get())
+                suffix, interpreter = '.sh', ['bash']
+        except Exception as e:  # noqa: BLE001
+            self._status(self._t('conv_err') % e, error=True)
+            return
+        fd, tmp = tempfile.mkstemp(suffix=suffix, prefix='bat2sh_run_')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(script)
+            workdir = os.path.dirname(os.path.abspath(inp))
+            cmd = interpreter + [tmp]
+            try:
+                proc = subprocess.run(cmd, cwd=workdir, timeout=120,
+                                      capture_output=True, text=True)
+            except FileNotFoundError:
+                self._status('%s not found on PATH' % cmd[0], error=True)
+                return
+            except subprocess.TimeoutExpired:
+                self._status('timed out after 120s', error=True)
+                return
+            out = (proc.stdout + proc.stderr).strip()
+            if out:
+                self._set_preview(script, data + '\n\n--- output ---\n'
+                                  + out[-4000:])
+            ok = proc.returncode == 0
+            self._status(self._t('ran_ok' if ok else 'ran_fail')
+                         % proc.returncode, error=not ok)
+        finally:
+            os.unlink(tmp)
 
     def _convert_folder(self, folder):
         files = []

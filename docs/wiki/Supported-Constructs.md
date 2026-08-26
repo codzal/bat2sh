@@ -8,7 +8,13 @@ args `%1..%9 %* %~1 %~dp0 %~nx...`, `%ERRORLEVEL%`.
 Windows env -> POSIX: `%TEMP%/%TMP%`, `%USERPROFILE%`, `%APPDATA%`,
 `%LOCALAPPDATA%`, `%PROGRAMFILES%`, `%PROGRAMDATA%`, `%SYSTEMROOT%/%WINDIR%`,
 `%COMPUTERNAME%`. Dotted names (`config.server.host`) become
-`config_server_host`; dynamic `set "a.!sec!.!k!=!v!"` uses `printf -v`.
+`config_server_host`; dynamic `set "a.!sec!.!k!=!v!"` uses `printf -v`. Dynamic call labels (`call :!name!`) resolve through the same
+mechanism. In the PowerShell target computed names go through
+`Set-Variable` with a runtime name expression instead.
+
+The table above describes the **bash** target; `--target=ps1` covers a
+growing subset of it - see [[PowerShell Target beta]] for what translates
+there today.
 
 ## Flow
 `if/not/i/exist/defined/errorlevel`, comparisons (`equ neq lss leq gtr geq`;

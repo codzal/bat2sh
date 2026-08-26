@@ -1,7 +1,7 @@
 # bat2sh wiki
 
-Translates Windows batch (`.bat`/`.cmd`) into bash (and, experimentally,
-PowerShell).
+Translates Windows batch (`.bat`/`.cmd`) into bash, or into PowerShell 7
+with `--target=ps1`.
 
 **For users**
 
@@ -26,8 +26,9 @@ PowerShell).
 * [Contributing](https://github.com/codzal/bat2sh/blob/dev/CONTRIBUTING.md)
 * [Changelog](https://github.com/codzal/bat2sh/blob/dev/CHANGELOG.md)
 
-> Status: **beta (v0.3)**. Verify generated scripts with `-c` /
-> `--analyze` before relying on them.
+
+> Status: **beta (v0.4)**. The ps1 target parses clean on all 62 bundled
+> examples; still, verify your scripts with `-c` / `--analyze` first.
 
 > Note: this wiki is maintained in **English only**. The desktop GUI ships
 > additional UI languages that may be incomplete.

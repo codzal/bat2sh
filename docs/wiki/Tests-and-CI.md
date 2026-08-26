@@ -21,6 +21,10 @@ done
 ## GitHub Actions (.github/workflows/ci.yml)
 * job **test**: compileall -> pyflakes -> convert all examples + `bash -n`
   -> runtime smoke (hello_world and ini from their own folder) -> snapshots
+* job **powershell**: converts every example with `--target=ps1`, parse-checks
+  all 62 outputs plus the hand-written `examples/*/ps/*.ps1` under pwsh,
+  fails on any `BAT2SH WARNING` leaking into output, and runs two converted
+  scripts end-to-end as a runtime smoke
 * job **legacy-36**: python:3.6-slim container proves oldest support
 * job **shellcheck**: lints repository shell helpers
 * workflow **codeql.yml**: weekly security scanning

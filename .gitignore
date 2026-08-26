@@ -17,3 +17,6 @@ __pycache__/
 
 # Kate editor swap files
 .kate-swp
+
+# Local agent instructions
+AGENTS.md

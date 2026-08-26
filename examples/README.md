@@ -1,18 +1,21 @@
-# examples/ — примеры для проверки конвертера
+# examples/ - converter test cases
 
-Каждая подпапка — своя тема:
-* `basics/` переменные, echo, аргументы, подстроки
-* `control_flow/` if/else, циклы, goto, подпрограммы
-* `file_operations/` работа с файлами, пробелы, редиректы
-* `advanced/` сборка, взаимодействие, пути Windows, парсер INI
+Each subfolder covers one theme:
 
-## Запуск
+* `basics/` variables, echo, arguments, substrings
+* `control_flow/` if/else, loops, goto, subroutines
+* `file_operations/` file ops, spaces in names, redirections
+* `advanced/` builds, user interaction, Windows paths, INI parser
+* `complextasks/` 40 real-world style complex scripts (stress cases)
+
+## Run
+
 ```bash
-bash generate_examples.sh      # сконвертировать всё (создаст *.sh)
-bash remove_generated.sh       # убрать сгенерированные *.sh
+bash generate_examples.sh      # convert everything (creates *.sh)
+bash remove_generated.sh       # remove generated *.sh
 ```
 
-⚠️ Примеры **выполняют реальные команды** (создают/удаляют файлы в текущей
-папке). Запускайте в песочнице или в выделенном каталоге.
-Файлы `*.sh` здесь — продукты конвертации, в git не попадают
-(кроме двух хелперов выше).
+Warning: these samples **execute real commands** (create/delete files in the
+current directory). Run them in a sandbox or a dedicated folder.
+Generated `*.sh` files are build products and stay out of git - except the
+two helper scripts above.

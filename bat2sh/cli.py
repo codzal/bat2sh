@@ -174,8 +174,13 @@ def shell_hints(text, limit=8):
 
 
 def install_vscode_task(directory='.'):
-    """Create .vscode/tasks.json with a bat2sh convert+run task."""
+    """Create .vscode/tasks.json with a bat2sh convert+run task.
+
+    VS Code and VSCodium read the same workspace file, so one write covers
+    both; the installed editors are detected and reported.
+    """
     import json
+    import shutil
     vdir = os.path.join(directory, '.vscode')
     os.makedirs(vdir, exist_ok=True)
     cfg = {
@@ -193,6 +198,16 @@ def install_vscode_task(directory='.'):
     with open(dst, 'w', encoding='utf-8') as f:
         json.dump(cfg, f, indent=2)
     print('Wrote %s' % dst)
+    editors = [name for name, exe in (('VS Code', 'code'),
+                                      ('VSCodium', 'codium'))
+               if shutil.which(exe)]
+    if editors:
+        print('Detected: %s - both will pick up this task.'
+              % ', '.join(editors))
+    else:
+        print('No VS Code/VSCodium binary found on PATH; tasks.json is '
+              'written and will be picked up when an editor opens this '
+              'folder.')
 
 
 def syntax_check(text):
@@ -355,7 +370,7 @@ def _process_job(args, src, out):
         f.write(result)
     if args.executable:
         try:
-            os.chmod(out, 0o755)
+            os.chmod(out, 0o700)
         except OSError:
             pass
     if not args.quiet:

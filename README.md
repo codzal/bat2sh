@@ -25,7 +25,7 @@ batch (Windows)  ──►  bash (Linux / macOS / WSL)
 
 ---
 
-> **Status: beta (v0.3).** Many commands and edge cases are still being
+> **Status: beta (v0.4).** Many commands and edge cases are still being
 > implemented — audit your scripts with `--analyze` / `-c` before relying
 > on the output.
 
@@ -114,7 +114,7 @@ python3 -m bat2sh -c examples/
 | `-r`, `--run` | Convert and execute immediately (nothing written) |
 | `--path-style {wsl,wine,root}` | Drive-letter mapping style |
 | `--shebang STR` | Interpreter line for generated scripts |
-| `-x`, `--executable` | chmod +x written .sh files |
+| `-x`, `--executable` | chmod 0700 the written .sh files (owner only) |
 | `--diff` | Show batch vs bash side by side |
 | `--strict-bash` | Insert `set -euo pipefail` |
 | `-d`, `--debug` | Keep converter debug comments (output is clean by default) |
@@ -139,11 +139,15 @@ A Tkinter GUI is provided for users who prefer point-and-click operation:
 python3 frontend.py
 ```
 
-It offers file/folder selection, output options (next-to-input, choose file,
-output directory, or preview-only), a *syntax-check only* mode, a live preview
-of the generated script, copy-to-clipboard, *Save As…*, an encoding selector,
-and *no-clobber* / *quiet* toggles. A menu bar (File / Edit / Run / Help) and
-keyboard shortcuts (`Ctrl+O`, `Ctrl+S`, `Ctrl+C`, `F5`) are provided.
+It offers file/folder selection (with drag & drop when `tkinterdnd2` is
+installed), output options (next-to-input, choose file, output directory,
+or preview-only), a *syntax-check only* mode, target language and path
+presets, run-after-convert, audit mode, runtime layer, shebang override
+and quiet mode. Less obvious controls explain themselves on hover.
+A live dual-pane preview with synchronized scrolling, copy-to-clipboard,
+*Save As…* and an encoding selector are included. A menu bar
+(File / Edit / Run / Help) and keyboard shortcuts (`Ctrl+O`, `Ctrl+S`,
+`Ctrl+C`, `F5`) are provided.
 The UI language can be switched in the **Language** menu - English is
 built in, further languages ship as editable `languages/<code>.txt`
 packs (e.g. `languages/ru.txt`).
@@ -160,11 +164,17 @@ batch files that demonstrate (and verify) the converter's coverage:
 
 ```
 examples/
-  basics/         variables, echo, arguments, substrings
-  control_flow/   if/else, loops, goto & subroutines
+  basics/           variables, echo, arguments, substrings
+  control_flow/     if/else, loops, goto & subroutines
   file_operations/  md/copy/move/ren/del/rd with spaces & redirects
-  advanced/       build scripts, user interaction, Windows path translation
+  advanced/         build scripts, user interaction, Windows path translation
+  complextasks/     40 stress cases: log rotation, CSV reports, recursion,
+                    state machines, retry loops and more
+  */ps/             hand-written PowerShell counterparts of each category
 ```
+
+Every example round-trips through CI twice: converted output must pass
+`bash -n`, and `--target=ps1` output must parse under pwsh.
 
 Run `examples/generate_examples.sh` to convert the whole tree in one command:
 
@@ -209,9 +219,12 @@ bat2sh is a translator, not an emulator. Known caveats:
   commands are no-ops.
 * The command source of `for /f '...'` executes as a shell command;
   batch-only syntax inside is not re-parsed.
-* Computed variable names (`!prefix_%%i!`) and dynamic call labels
-  (`call :!name!`) have no direct bash equivalent.
-* The PowerShell target covers a basic subset and is marked beta.
+* Computed variable names (`!prefix_%%i!`) translate to `Set-Variable` /
+  bash indirect expansion, but exotic nesting may still fall back to a
+  warning comment.
+* `--target=ps1` produces parse-clean PowerShell 7 for every bundled
+  example, yet remains beta: command coverage is smaller than the bash
+  target and semantics are best-effort.
 * GUI translations other than English may be incomplete.
 
 Patches and example batch files that expose missing behaviour are welcome.

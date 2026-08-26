@@ -2,8 +2,10 @@
 
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -63,6 +65,7 @@ if bat2sh is None or not _backend_works(bat2sh):
 decode_text = bat2sh.decode_text
 syntax_check = bat2sh.syntax_check
 Translator = bat2sh.Translator
+from bat2sh.audit import analyze, summarize   # noqa: E402
 VERSION = bat2sh.__version__
 ENCODINGS = ['auto', 'utf-8', 'utf-8-sig', 'cp1251', 'cp1252',
              'cp866', 'latin-1', 'utf-16']
@@ -82,7 +85,6 @@ STRINGS = {
         'out_file': 'Choose file:', 'out_outdir': 'Output directory:',
         'out_stdout': 'Preview only (do not write)',
         'encoding': 'Encoding:', 'chk': 'Syntax-check only (-c)',
-        'clean': 'Clean output (-n)',
         'noclobber': "Don't overwrite existing (-C)",
         'debug': 'Keep debug comments (--debug)', 'copy_btn': 'Copy', 'save_btn': 'Save As…',
         'ready': 'Ready.', 'preview': 'Generated shell script',
@@ -90,6 +92,31 @@ STRINGS = {
         'preset_bash': 'Pure Bash', 'preset_wsl': 'WSL',
         'preset_wine': 'Wine-friendly',
         'strict': 'set -euo pipefail',
+        'out_lang': 'Script language:',
+        'run_after': 'Run after convert (-r)',
+        'audit': 'Audit (--analyze)',
+        'rlayer': 'Runtime layer',
+        'quiet_opt': 'Quiet (-q)',
+        'shebang': 'Shebang:',
+        'ran_ok': 'Exited with code %d.',
+        'ran_fail': 'Exit %d (see console).',
+        'tip_preset_bash': 'Convert paths as-is; drives like C:\\ stay '
+                           'literal. Best for reading, not for running.',
+        'tip_preset_wsl': 'Map drive letters to /mnt/c style WSL paths '
+                          'so the script runs inside WSL.',
+        'tip_preset_wine': 'Keep Windows paths but point commands at a '
+                           'Wine prefix (Z:\\C\\...).',
+        'tip_strict': 'Prepend "set -euo pipefail": stop on errors, unset '
+                      'variables and failed pipes. Stricter than batch.',
+        'tip_check': 'Run bash -n on the result and write nothing. Use it '
+                     'to test conversion safety first.',
+        'tip_noclobber': 'Refuse to overwrite an existing output file '
+                         'instead of silently replacing it.',
+        'tip_debug': 'Keep BAT2SH debug comments in the output. Off by '
+                     'default - generated scripts are clean.',
+        'tip_target_ps1': 'Emit PowerShell 7 instead of bash. Beta: every '
+                          'example converts parse-clean, coverage is still '
+                          'smaller.',
         'beta': '[beta] translations other than English may be incomplete',
         'choose_input': 'Please choose an input file or folder.',
         'input_missing': 'Input not found: %s',
@@ -144,6 +171,86 @@ LANGS = _load_langs()
 _BASE = TkinterDnD.Tk if _DND else tk.Tk
 
 
+class ToolTip:
+    """Hover hint shown after a short delay.
+
+    One persistent (withdrawn, not destroyed) borderless window per tip so
+    repeated hovers do not flicker. Never stays above other applications:
+    no -topmost, and every focus loss hides it.
+    """
+
+    @classmethod
+    def hide_all(cls):
+        for inst in cls._registry:
+            inst._hide()
+
+    _registry = []
+
+    def __init__(self, widget, get_text, delay=700):
+        self.widget = widget
+        self.get_text = get_text
+        self.delay = delay
+        self._id = None
+        self._win = None
+        self._lbl = None
+        ToolTip._registry.append(self)
+        widget.bind('<Enter>', self._schedule)
+        widget.bind('<Leave>', self._hide)
+        widget.bind('<ButtonPress>', self._hide)
+
+    def _pointer_inside(self):
+        px, py = self.widget.winfo_pointerx(), self.widget.winfo_pointery()
+        under = self.widget.winfo_containing(px, py)
+        return under is not None and str(under).startswith(str(self.widget))
+
+    def _schedule(self, _e=None):
+        self._cancel()
+        self._id = self.widget.after(self.delay, self._show)
+
+    def _cancel(self):
+        if self._id:
+            try:
+                self.widget.after_cancel(self._id)
+            except tk.TclError:
+                pass
+            self._id = None
+
+    def _show(self):
+        self._id = None
+        text = self.get_text()
+        if not text or not self._pointer_inside():
+            return
+        if self._win is None:
+            self._win = tk.Toplevel(self.widget)
+            self._win.wm_overrideredirect(True)
+            self._lbl = tk.Label(
+                self._win, justify='left', wraplength=340,
+                background='#ffffe0', relief='solid', borderwidth=1,
+                font=('TkDefaultFont', 9), padx=6, pady=4)
+            self._lbl.pack()
+        self._lbl.configure(text=text)
+        # below-right of the cursor, flipped away from screen edges,
+        # so the window never covers the pointer (that causes flicker)
+        x = self.widget.winfo_rootx() + min(12, self.widget.winfo_width())
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        sw, sh = self.widget.winfo_screenwidth(), \
+            self.widget.winfo_screenheight()
+        self._win.update_idletasks()
+        if x + self._win.winfo_reqwidth() > sw - 8:
+            x = max(8, self.widget.winfo_rootx()
+                    - self._win.winfo_reqwidth() - 12)
+        if y + self._win.winfo_reqheight() > sh - 8:
+            y = self.widget.winfo_rooty() - self._win.winfo_reqheight() - 6
+        self._win.wm_geometry('+%d+%d' % (x, y))
+        self._win.deiconify()
+        self._win.lift(self.widget)
+
+    def _hide(self, _e=None):
+        self._cancel()
+        if self._win is not None:
+            self._win.withdraw()
+
+
 class Bat2ShGUI(_BASE):
     def __init__(self):
         super().__init__()
@@ -160,11 +267,17 @@ class Bat2ShGUI(_BASE):
         self.out_var = tk.StringVar()
         self.outdir_var = tk.StringVar()
         self.check_var = tk.BooleanVar(value=False)
-        self.clean_var = tk.BooleanVar(value=False)
         self.noclobber_var = tk.BooleanVar(value=False)
         self.debug_var = tk.BooleanVar(value=False)
         self.encoding_var = tk.StringVar(value='auto')
         self.preset_var = tk.StringVar(value='bash')
+        self.target_var = tk.StringVar(value='bash')
+        self.strict_var = tk.BooleanVar(value=False)
+        self.run_var = tk.BooleanVar(value=False)
+        self.analyze_var = tk.BooleanVar(value=False)
+        self.rlayer_var = tk.BooleanVar(value=False)
+        self.quiet_var = tk.BooleanVar(value=False)
+        self.shebang_var = tk.StringVar()
 
         fixed = tkfont.nametofont('TkFixedFont')
         fixed.configure(size=10)
@@ -192,8 +305,13 @@ class Bat2ShGUI(_BASE):
         self.radio_outdir.configure(text=t('out_outdir'))
         self.radio_stdout.configure(text=t('out_stdout'))
         self.enc_lbl.configure(text=t('encoding'))
+        self.lang_lbl.configure(text=t('out_lang'))
+        self.shebang_lbl.configure(text=t('shebang'))
+        self.run_btn.configure(text=t('run_after'))
+        self.analyze_btn.configure(text=t('audit'))
+        self.rlayer_btn.configure(text=t('rlayer'))
+        self.quiet_btn.configure(text=t('quiet_opt'))
         self.check_btn.configure(text=t('chk'))
-        self.clean_btn.configure(text=t('clean'))
         self.noclobber_btn.configure(text=t('noclobber'))
         self.debug_btn.configure(text=t('debug'))
         self.convert_btn.configure(text=t('convert'))
@@ -240,6 +358,8 @@ class Bat2ShGUI(_BASE):
         helpmenu = tk.Menu(menubar, tearoff=0)
         helpmenu.add_command(label=t('about'), command=self._about)
         menubar.add_cascade(label=t('help'), menu=helpmenu)
+        self._cascades = [c for c in (filemenu, editmenu, runmenu,
+                                      langmenu, helpmenu)]
         return menubar
 
     def _build_widgets(self):
@@ -300,20 +420,40 @@ class Bat2ShGUI(_BASE):
 
         self.strict_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('strict'),
-            variable=tk.BooleanVar(value=False))
+            variable=self.strict_var)
 
         self.check_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('chk'),
             variable=self.check_var)
-        self.clean_btn = ttk.Checkbutton(
-            self.opt_frame, text=self._t('clean'),
-            variable=self.clean_var)
         self.noclobber_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('noclobber'),
             variable=self.noclobber_var)
         self.debug_btn = ttk.Checkbutton(
             self.opt_frame, text=self._t('debug'),
             variable=self.debug_var)
+
+        self.lang_lbl = ttk.Label(self.opt_frame, text=self._t('out_lang'))
+        self.target_combo = ttk.Combobox(self.opt_frame,
+                                         textvariable=self.target_var,
+                                         values=('bash', 'ps1'), width=6,
+                                         state='readonly')
+        self.run_btn = ttk.Checkbutton(self.opt_frame,
+                                       text=self._t('run_after'),
+                                       variable=self.run_var)
+        self.analyze_btn = ttk.Checkbutton(self.opt_frame,
+                                           text=self._t('audit'),
+                                           variable=self.analyze_var)
+        self.rlayer_btn = ttk.Checkbutton(self.opt_frame,
+                                          text=self._t('rlayer'),
+                                          variable=self.rlayer_var)
+        self.quiet_btn = ttk.Checkbutton(self.opt_frame,
+                                         text=self._t('quiet_opt'),
+                                         variable=self.quiet_var)
+        self.shebang_lbl = ttk.Label(self.opt_frame,
+                                     text=self._t('shebang'))
+        self.shebang_entry = ttk.Entry(self.opt_frame,
+                                       textvariable=self.shebang_var,
+                                       width=22)
 
         self.convert_btn = ttk.Button(self, text=self._t('convert'),
                                       command=self._convert)
@@ -340,25 +480,46 @@ class Bat2ShGUI(_BASE):
         self.pane.add(self.orig, width=280)
         self.pane.add(self.preview)
         self.orig.configure(state=tk.DISABLED)
-        self._orig_yview = self.orig.yview
-        self.orig['yscrollcommand'] = lambda f, t: (
-            self.preview.yview_moveto(f) if not getattr(
-                self, '_syncing', False) else None)
-        self.preview['yscrollcommand'] = self._sync_scroll
+        self._sync_lock = False
+        self.orig['yscrollcommand'] = (
+            lambda f, l: self._mirror(self.preview, f))
+        self.preview['yscrollcommand'] = (
+            lambda f, l: self._mirror(self.orig, f))
         for wdg in (self.orig, self.preview):
             wdg.tag_configure('kw', foreground='#2a6fdb')
             wdg.tag_configure('str', foreground='#b0560f')
             wdg.tag_configure('com', foreground='#3d8f3d')
 
-    def _sync_scroll(self, first, last):
-        if getattr(self, '_syncing', False):
+        # hints only where the label alone does not explain the option
+        for wdg, key in (
+            (self.preset_bash, 'tip_preset_bash'),
+            (self.preset_wsl, 'tip_preset_wsl'),
+            (self.preset_wine, 'tip_preset_wine'),
+            (self.strict_btn, 'tip_strict'),
+            (self.check_btn, 'tip_check'),
+            (self.noclobber_btn, 'tip_noclobber'),
+            (self.debug_btn, 'tip_debug'),
+        ):
+            ToolTip(wdg, lambda k=key: self._t(k))
+        # never leave a hint floating over other applications
+        self.bind('<Deactivate>', lambda _e: ToolTip.hide_all())
+        for cascade in self._cascades:
+            old_post = cascade.cget('postcommand')
+            def guarded(_old=old_post):
+                ToolTip.hide_all()
+                if _old:
+                    self.tk.call(_old)
+            cascade.configure(postcommand=guarded)
+
+    def _mirror(self, other, first):
+        """Mirror scroll position without feedback loops."""
+        if self._sync_lock:
             return
-        self._syncing = True
+        self._sync_lock = True
         try:
-            self.orig.yview_moveto(first)
-            self.preview.yview_moveto(first)
+            other.yview_moveto(first)
         finally:
-            self._syncing = False
+            self._sync_lock = False
 
     @staticmethod
     def _highlight(widget, kind):
@@ -403,13 +564,21 @@ class Bat2ShGUI(_BASE):
         self.enc_lbl.grid(row=0, column=4, sticky='e', padx=6, pady=2)
         self.enc_combo.grid(row=0, column=5, sticky='w', padx=4, pady=2)
         self.check_btn.grid(row=4, column=0, columnspan=2, sticky='w', **pad)
-        self.clean_btn.grid(row=4, column=2, columnspan=2, sticky='w', **pad)
         self.noclobber_btn.grid(row=5, column=0, columnspan=2, sticky='w', **pad)
         self.debug_btn.grid(row=5, column=2, columnspan=2, sticky='w', **pad)
         self.preset_lbl.grid(row=6, column=0, sticky='w', padx=6, pady=2)
         self.preset_bash.grid(row=6, column=1, sticky='w', padx=4, pady=2)
         self.preset_wsl.grid(row=6, column=2, sticky='w', padx=4, pady=2)
         self.preset_wine.grid(row=6, column=3, sticky='w', padx=4, pady=2)
+
+        self.lang_lbl.grid(row=7, column=0, sticky='w', padx=6, pady=2)
+        self.target_combo.grid(row=7, column=1, sticky='w', padx=4, pady=2)
+        self.shebang_lbl.grid(row=7, column=2, sticky='e', padx=6, pady=2)
+        self.shebang_entry.grid(row=7, column=3, sticky='ew', padx=4, pady=2)
+        self.run_btn.grid(row=8, column=0, sticky='w', **pad)
+        self.analyze_btn.grid(row=8, column=1, sticky='w', **pad)
+        self.rlayer_btn.grid(row=8, column=2, sticky='w', **pad)
+        self.quiet_btn.grid(row=8, column=3, sticky='w', **pad)
         for c in (1, 2):
             self.opt_frame.columnconfigure(c, weight=1)
         self.opt_frame.columnconfigure(5, weight=0)
@@ -469,7 +638,7 @@ class Bat2ShGUI(_BASE):
         with open(dst, 'w', encoding='utf-8') as f:
             f.write(sh)
         try:
-            os.chmod(dst, 0o755)
+            os.chmod(dst, 0o700)
         except OSError:
             pass
 
@@ -494,13 +663,13 @@ class Bat2ShGUI(_BASE):
         if self.lang == 'ru':
             body = ('bat2sh %s\n\nПереводит сценарии Windows batch '
                     '(.bat/.cmd) в сценарии POSIX bash.\n\n'
-                    'Бэкенд: bat2sh (диспетчер по счётчику команд).\n'
+                    'Бэкенд: bat2sh.\n'
                     'Фронтенд: Tkinter.') % VERSION
             title = 'О программе bat2sh'
         else:
             body = ('bat2sh %s\n\nConverts Windows batch (.bat/.cmd) scripts'
                     ' into POSIX bash scripts.\n\n'
-                    'Backend: bat2sh (program-counter dispatch translator).\n'
+                    'Backend: bat2sh.\n'
                     'GUI: Tkinter front-end.') % VERSION
             title = 'About bat2sh'
         messagebox.showinfo(title, body)
@@ -508,6 +677,25 @@ class Bat2ShGUI(_BASE):
     @staticmethod
     def _bash_check(sh):
         return syntax_check(sh)
+
+    @staticmethod
+    def _pwsh_check(ps):
+        """Parse-validate PowerShell output the same way CI does."""
+        exe = shutil.which('pwsh')
+        if not exe:
+            return False, 'pwsh not found on PATH'
+        fd, tmp = tempfile.mkstemp(suffix='.ps1')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(ps)
+            r = subprocess.run(
+                [exe, '-NoProfile', '-Command',
+                 '$null=[scriptblock]::Create((Get-Content -Raw '
+                 "-LiteralPath '%s'))" % tmp],
+                capture_output=True, text=True, timeout=30)
+            return r.returncode == 0, (r.stderr or '').strip()
+        finally:
+            os.unlink(tmp)
 
     # browse actions
     def _on_drop(self, event):
@@ -585,15 +773,30 @@ class Bat2ShGUI(_BASE):
     def _convert_file(self, inp):
         try:
             data = self._read(inp)
-            sh = Translator().convert(data, clean=not self.debug_var.get())
+            if self.target_var.get() == 'ps1':
+                from bat2sh.ps1 import convert as ps1_convert
+                sh, _fb = ps1_convert(data)
+            else:
+                sh = Translator().convert(
+                    data, clean=not self.debug_var.get(),
+                    shebang=self.shebang_var.get().strip() or None,
+                    strict=self.strict_var.get())
         except Exception as e:  # noqa: BLE001
             self._status(self._t('conv_err') % e, error=True)
             self._set_preview('')
             return
 
+        if self.analyze_var.get() and not self.quiet_var.get():
+            findings = summarize(analyze(data))
+            if findings:
+                sh += '\n\n--- ' + self._t('audit') + ' ---\n' + findings
+
         if self.check_var.get():
-            ok, err = self._bash_check(sh)
-            text = sh + ('\n\n--- bash -n errors ---\n' + err if not ok else '')
+            if self.target_var.get() == 'ps1':
+                ok, err = self._pwsh_check(sh)
+            else:
+                ok, err = self._bash_check(sh)
+            text = sh + ('\n\n--- errors ---\n' + err if not ok else '')
             self._set_preview(text)
             ok_txt = self._t('syntax_ok') if ok else self._t('syntax_fail')
             self._status(ok_txt, error=not ok)
@@ -620,7 +823,30 @@ class Bat2ShGUI(_BASE):
             self._status(self._t('write_err') % e, error=True)
             return
         self._set_preview(sh, data)
-        self._status(self._t('wrote') % dst)
+        if not self.quiet_var.get():
+            self._status(self._t('wrote') % dst)
+        if self.run_var.get():
+            self._execute(inp, dst)
+
+    def _execute(self, inp, dst):
+        """-r equivalent: run the freshly written script in its folder."""
+        workdir = os.path.dirname(os.path.abspath(inp))
+        if self.target_var.get() == 'ps1':
+            cmd = ['pwsh', '-NoProfile', '-File', os.path.abspath(dst)]
+        else:
+            cmd = ['bash', os.path.abspath(dst)]
+        try:
+            proc = subprocess.run(cmd, cwd=workdir, timeout=60,
+                                  capture_output=True, text=True)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            self._status(str(e), error=True)
+            return
+        tail = (proc.stdout + proc.stderr).strip().splitlines()
+        if tail and not self.quiet_var.get():
+            self._status(tail[-1][:120])
+        ok = proc.returncode == 0
+        self._status(self._t('ran_ok' if ok else 'ran_fail')
+                     % proc.returncode, error=not ok)
 
     def _convert_folder(self, folder):
         files = []
@@ -643,7 +869,7 @@ class Bat2ShGUI(_BASE):
         for i, src in enumerate(files, 1):
             try:
                 sh = Translator().convert(self._read(src),
-                                          clean=self.clean_var.get())
+                                          clean=not self.debug_var.get())
             except Exception as e:  # noqa: BLE001
                 lines.append('%s : ERROR %s' % (src, e))
                 continue
@@ -698,7 +924,7 @@ class Bat2ShGUI(_BASE):
                 with open(path, 'w', encoding='utf-8') as f:
                     f.write(text)
                 try:
-                    os.chmod(path, 0o755)
+                    os.chmod(path, 0o700)
                 except OSError:
                     pass
                 self._status(self._t('saved') % path)

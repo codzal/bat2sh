@@ -43,13 +43,16 @@ def analyze(text):
                 continue
             extra = ''
             if rid == 'binary':
-                name = re.match(r'([\w.-]+?)\.(exe|msi|com)', m.group(0),
-                                re.I).group(1).lower()
-                if name in _SUGGEST:
-                    extra = ' Suggestion: %s' % _SUGGEST[name]
-                elif rid == 'binary':
-                    extra = (' Suggestion: wine %s or an equivalent utility'
-                             % m.group(0))
+                # the rule may swallow directories: C:\dir\tool.exe
+                base = re.split(r'[\\/]', m.group(0))[-1]
+                name_m = re.match(r'([\w.-]+?)\.(?:exe|msi|com)', base,
+                                  re.I)
+                if name_m and name_m.group(1).lower() in _SUGGEST:
+                    extra = ' Suggestion: %s' % _SUGGEST[name_m.group(1)
+                                                         .lower()]
+                else:
+                    extra = (' Suggestion: wine %s or an equivalent '
+                             'utility' % base)
             out.append({'line': no, 'col': m.start() + 1, 'id': rid,
                         'severity': sev,
                         'message': msg + extra,

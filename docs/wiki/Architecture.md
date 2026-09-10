@@ -9,7 +9,7 @@ bat2sh/
                  emit_for, cmd_* handlers, WIN_COMMAND_MAP dispatch,
                  REG_FUNCS/ci_replace extras, stats
   commands.py    standalone command helpers (attrib, icacls, net, ...)
-  ps1.py         beta PowerShell line translator (--target=ps1)
+  ps1.py         PowerShell backend (--target=ps1), AST-based like the bash one
   audit.py       compatibility detectors + migration_report(md|html)
   config.py      user rules from ~/.config/bat2sh/config.toml
   cli.py         argparse, decode_text, _process_job/_check, analyze/report
@@ -30,6 +30,27 @@ exit $ERRORLEVEL
 `goto X` = `PC=N; return`. Labels that are only ever **called** become real
 bash functions (`sub_*`) - a plain call does not abandon enclosing loops the
 way a PC jump would. `ARGS` is saved/restored around calls.
+
+## PowerShell backend (`ps1.py`)
+Mirrors the bash design: the same parser feeds a `PSG` generator that emits
+PowerShell 7. Notable mechanics:
+
+* **parse-clean guarantee** - any emitted line that still contains an
+  unescaped `%` becomes a warning comment; if an `if` condition cannot be
+  translated the whole block is dropped instead of leaving orphan braces.
+  CI fails when a warning ever reaches the output.
+* top-level `goto` becomes a program-counter switch loop
+  (`$__pc` + `switch` inside `:__loop while ($true)`); inside subroutines
+  `goto :eof` is just `return`.
+* computed variable names (`set seen_%%w=1`, `%~2=0`, `map!i!=x`) are built
+  at runtime by `_name_expr` and applied through `Set-Variable`.
+* arithmetic wraps environment and argument references with `[int]`
+  (`_int_cast`) - otherwise `"2" + 1` yields `"21"` and comparisons go
+  lexicographic.
+* `_q()` braces bare `$names`, so `$i:` in a string stays literal;
+  `_WIN_ENV` values are full expressions and are never braced.
+* operator splitting is quote-aware: `2>&1` survives, and `&` inside
+  quoted strings does not split commands.
 
 ## Line pipeline
 `translate_segment`: strip/@ -> nul rewrite -> rem/:: -> goto -> reg/sc ->

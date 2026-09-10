@@ -12,3 +12,6 @@ mkdir -p "/tmp/bat2sh_drives/<x>" && ln -sfn "<root>" "/tmp/bat2sh_drives/<x>/."
 * `--strict-bash` adds `set -euo pipefail` - note that intentionally failing
   commands will stop such scripts;
 * `ERRORLEVEL=$?` after every statement is the deliberate cmd.exe model.
+
+In the GUI this is the *Runtime layer* checkbox; hover it for a
+one-line summary.

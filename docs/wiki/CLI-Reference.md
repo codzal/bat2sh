@@ -1,11 +1,11 @@
 # CLI Reference
 
 ```
-usage: bat2sh [-h] [-i] [-o DIR] [-c] [-r] [-n] [-C] [-q] [--encoding ENC]
-              [--path-style {wsl,wine,root}] [--shebang STR] [-x] [--diff]
-              [--strict-bash] [--analyze] [--report FILE]
-              [--install-vscode-task [DIR]] [--runtime-layer]
-              [--target {bash,ps1}] [-v]
+usage: bat2sh [-h] [-i] [-o DIR|FILE.sh] [-c] [-r] [-d] [-C] [-q]
+              [--encoding ENC] [--path-style {wsl,wine,root}]
+              [--shebang STR] [-x] [--diff] [--strict-bash] [--analyze]
+              [--report FILE] [--install-vscode-task [DIR]]
+              [--runtime-layer] [--target {bash,ps1}] [-v]
               [input] [output]
 ```
 
@@ -16,7 +16,7 @@ usage: bat2sh [-h] [-i] [-o DIR] [-c] [-r] [-n] [-C] [-q] [--encoding ENC]
 | `-o DIR\|FILE.sh` | output dir (keeps tree) **or** full file path when it ends with `.sh` |
 | `-c`, `--check` | `bash -n` (+shellcheck hints if installed); writes nothing |
 | `-r`, `--run` | convert then execute; exit code = script exit code |
-| `-n`, `--no-debug` | strip converter-injected comments |
+| `-d`, `--debug` | keep converter debug comments (output is clean by default) |
 | `-C`, `--no-clobber` | do not overwrite existing `.sh` |
 | `-q`, `--quiet` | suppress info messages |
 | `--encoding ENC` | force input codec (`cp1251`, `cp866`, ...) |
@@ -26,7 +26,7 @@ usage: bat2sh [-h] [-i] [-o DIR] [-c] [-r] [-n] [-C] [-q] [--encoding ENC]
 |---|---|
 | `--path-style wsl\|wine\|root` | `C:\x` -> `/mnt/c/x` \| `~/.wine/drive_c/x` \| `/x` |
 | `--shebang STR` | interpreter line (default `#!/usr/bin/env bash`) |
-| `-x`, `--executable` | chmod 755 written files |
+| `-x`, `--executable` | chmod 0700 written files (owner only) |
 
 ## Review & hardening
 | Flag | Action |
@@ -44,8 +44,8 @@ usage: bat2sh [-h] [-i] [-o DIR] [-c] [-r] [-n] [-C] [-q] [--encoding ENC]
 ## Misc
 | Flag | Action |
 |---|---|
-| `--target bash\|ps1` | output language (ps1 = beta) |
-| `--install-vscode-task [DIR]` | write `.vscode/tasks.json` |
+| `--target bash\|ps1` | output language; ps1 emits PowerShell 7 and names outputs `.ps1` ([[PowerShell Target beta]]) |
+| `--install-vscode-task [DIR]` | write `.vscode/tasks.json`; reports detected VS Code / VSCodium installs (both read the same file) |
 | `-v` / `-h` | version / help |
 
 ## stdin modes

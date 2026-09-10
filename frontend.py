@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import webbrowser
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -113,7 +114,11 @@ STRINGS = {
         'tip_debug': 'Keep BAT2SH debug comments in the output. Off by '
                      'default - generated scripts are clean.',
         'audit_clean': 'clean - no compatibility findings',
-        'tip_audit': 'Scan the batch source for Windows-only calls '
+                'tip_rlayer': 'Inject errorlevel and drive-letter helpers so '
+                      'scripts that probe C:\\ or expect ERRORLEVEL '
+                      'keep working on Linux.',
+        'wiki': 'Wiki (online)',
+'tip_audit': 'Scan the batch source for Windows-only calls '
                      '(registry, services, .exe binaries) before '
                      'conversion. Report goes to the preview pane.',
         'tip_run_now': 'Convert in memory and execute right away; the '
@@ -138,7 +143,7 @@ STRINGS = {
         'dlg_open_dir': 'Open Batch Folder',
         'dlg_save_as': 'Save Shell Script As',
         'dlg_outdir': 'Select Output Directory',
-        'ft_batch': 'Batch files', 'ft_shell': 'Shell script',
+        'ft_batch': 'Batch files', 'ft_shell': 'Shell script', 'ft_ps1': 'PowerShell script',
         'ft_all': 'All files',
     }
 }
@@ -371,6 +376,10 @@ class Bat2ShGUI(_BASE):
                 command=lambda c=code: self._set_lang(c))
         menubar.add_cascade(label='Language', menu=langmenu)
         helpmenu = tk.Menu(menubar, tearoff=0)
+        helpmenu.add_command(label=t('wiki'),
+                             command=lambda: webbrowser.open(
+                                 'https://github.com/codzal/bat2sh/wiki'))
+        helpmenu.add_separator()
         helpmenu.add_command(label=t('about'), command=self._about)
         menubar.add_cascade(label=t('help'), menu=helpmenu)
         self._cascades = [c for c in (filemenu, editmenu, runmenu,
@@ -511,6 +520,7 @@ class Bat2ShGUI(_BASE):
             (self.noclobber_btn, 'tip_noclobber'),
             (self.debug_btn, 'tip_debug'),
             (self.analyze_btn, 'tip_audit'),
+            (self.rlayer_btn, 'tip_rlayer'),
         ):
             ToolTip(wdg, lambda k=key: self._t(k))
 
@@ -625,15 +635,27 @@ class Bat2ShGUI(_BASE):
         enc = self.encoding_var.get()
         return None if enc == 'auto' else enc
 
+    def _out_ext(self):
+        return '.ps1' if self.target_var.get() == 'ps1' else '.sh'
+
+    def _save_filetypes(self):
+        ext = self._out_ext()
+        kind = self._t('ft_ps1') if ext == '.ps1' else self._t('ft_shell')
+        return [(kind, '*' + ext), (self._t('ft_all'), '*.*')]
+
     def _build_dst(self, src):
         mode = self.out_mode.get()
+        ext = self._out_ext()
         if mode == 'inplace':
-            return os.path.splitext(src)[0] + '.sh'
+            return os.path.splitext(src)[0] + ext
         if mode == 'file':
-            return self.out_var.get().strip()
+            path = self.out_var.get().strip()
+            if path and not path.lower().endswith(('.sh', '.ps1')):
+                path += ext
+            return path
         if mode == 'outdir':
-            od = self.outdir_var.get().strip()
-            return os.path.join(od, os.path.splitext(os.path.basename(src))[0] + '.sh')
+            base = os.path.splitext(os.path.basename(src))[0] + ext
+            return os.path.join(self.outdir_var.get().strip(), base)
         return None
 
     def _write(self, dst, sh):
@@ -735,9 +757,9 @@ class Bat2ShGUI(_BASE):
 
     def _browse_out(self):
         path = filedialog.asksaveasfilename(
-            title=self._t('dlg_save_as'), defaultextension='.sh',
-            filetypes=[(self._t('ft_shell'), '*.sh'),
-                       (self._t('ft_all'), '*.*')])
+            title=self._t('dlg_save_as'),
+            defaultextension=self._out_ext(),
+            filetypes=self._save_filetypes())
         if path:
             self.out_var.set(path)
 
@@ -958,9 +980,9 @@ class Bat2ShGUI(_BASE):
             self._status(self._t('nothing_to_save'), error=True)
             return
         path = filedialog.asksaveasfilename(
-            title=self._t('dlg_save_as'), defaultextension='.sh',
-            filetypes=[(self._t('ft_shell'), '*.sh'),
-                       (self._t('ft_all'), '*.*')])
+            title=self._t('dlg_save_as'),
+            defaultextension=self._out_ext(),
+            filetypes=self._save_filetypes())
         if path:
             try:
                 with open(path, 'w', encoding='utf-8') as f:
